@@ -10,3 +10,5 @@ d3dx12 = { path = "../../d3dx12" }
 dxsample = { path = "../dxsample" }
 windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }
 array-init = "2.0.0"
+cgmath = "0.18.0"
+
