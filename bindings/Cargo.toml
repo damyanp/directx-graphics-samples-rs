@@ -1,0 +1,13 @@
+[package]
+name = "bindings"
+version = "0.1.0"
+authors = ["Damyan Pepper <damyanp@microsoft.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }
+
+[build-dependencies]
+windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }

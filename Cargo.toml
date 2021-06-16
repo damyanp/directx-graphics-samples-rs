@@ -1,0 +1,5 @@
+[workspace]
+members = ["bindings", "d3dx12", "samples/d3d12-hello-world/*", "samples/dxsample"]
+
+[profile.release]
+debug = true
