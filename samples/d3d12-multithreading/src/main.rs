@@ -23,13 +23,16 @@ use windows::*;
 
 mod camera;
 mod rendering;
+mod timer;
 
 use rendering::*;
+use timer::*;
 
 #[derive(Default)]
 struct MultithreadingApp {
     hwnd: HWND,
     renderer: Option<Renderer>,
+    timer: Timer,
 }
 
 impl DXSample for MultithreadingApp {
@@ -42,7 +45,9 @@ impl DXSample for MultithreadingApp {
         self.create_resources()
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        self.timer.tick();
+    }
 
     fn render(&mut self) {
         let renderer = match &mut self.renderer {
