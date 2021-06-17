@@ -34,16 +34,9 @@ mod d3d12_hello_texture {
         root_signature: ID3D12RootSignature,
         pso: ID3D12PipelineState,
         command_list: ID3D12GraphicsCommandList,
-
-        // we need to keep this around to keep the reference alive, even though
-        // nothing reads from it
-        #[allow(dead_code)]
-        vertex_buffer: ID3D12Resource,
-
+        _vertex_buffer: ID3D12Resource,
         vbv: D3D12_VERTEX_BUFFER_VIEW,
-
-        #[allow(dead_code)]
-        texture: ID3D12Resource,
+        _texture: ID3D12Resource,
     }
 
     impl DXSample for Sample {
@@ -191,9 +184,9 @@ mod d3d12_hello_texture {
                 root_signature,
                 pso,
                 command_list,
-                vertex_buffer,
+                _vertex_buffer: vertex_buffer,
                 vbv,
-                texture,
+                _texture: texture,
             });
 
             Ok(())
