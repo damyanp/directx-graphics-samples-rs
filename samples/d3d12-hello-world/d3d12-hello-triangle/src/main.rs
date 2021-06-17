@@ -31,12 +31,7 @@ mod d3d12_hello_triangle {
         root_signature: ID3D12RootSignature,
         pso: ID3D12PipelineState,
         command_list: ID3D12GraphicsCommandList,
-
-        // we need to keep this around to keep the reference alive, even though
-        // nothing reads from it
-        #[allow(dead_code)]
-        vertex_buffer: ID3D12Resource,
-
+        _vertex_buffer: ID3D12Resource,
         vbv: D3D12_VERTEX_BUFFER_VIEW,
     }
 
@@ -157,7 +152,7 @@ mod d3d12_hello_triangle {
                 root_signature,
                 pso,
                 command_list,
-                vertex_buffer,
+                _vertex_buffer: vertex_buffer,
                 vbv,
             });
 
