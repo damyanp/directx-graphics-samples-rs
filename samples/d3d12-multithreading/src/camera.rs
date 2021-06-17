@@ -21,8 +21,8 @@ pub struct Camera {
 }
 
 pub struct ViewAndProjectionMatrices {
-    view: Matrix4<f32>,
-    projection: Matrix4<f32>,
+    pub view: Matrix4<f32>,
+    pub projection: Matrix4<f32>,
 }
 
 impl Default for Camera {

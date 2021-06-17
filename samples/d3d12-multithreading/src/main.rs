@@ -11,28 +11,66 @@
 
 use bindings::Windows::Win32::{
     Foundation::HWND,
-    Graphics::{
-        Direct3D12::ID3D12Device,
-        Dxgi::{
-            DXGIDeclareAdapterRemovalSupport, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-        },
+    Graphics::Dxgi::{
+        DXGIDeclareAdapterRemovalSupport, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
     },
 };
+use camera::{Camera, ViewAndProjectionMatrices};
+use cgmath::{
+    point3, vec3, vec4, Deg, InnerSpace, Matrix3, Matrix4, Point3, Rad, SquareMatrix, Transform,
+    Vector3, Vector4,
+};
 use dxsample::{run_sample, DXSample, SampleCommandLine};
+use rendering::Renderer;
+use timer::Timer;
 use windows::*;
 
 mod camera;
 mod rendering;
 mod timer;
 
-use rendering::*;
-use timer::*;
+const NUM_CAMERAS: usize = 3;
 
 #[derive(Default)]
 struct MultithreadingApp {
     hwnd: HWND,
     renderer: Option<Renderer>,
+    input_state: InputState,
     timer: Timer,
+    camera: Camera,
+    lights: [LightState; NUM_CAMERAS],
+    light_cameras: [Camera; NUM_CAMERAS],
+}
+
+#[derive(Default)]
+struct InputState {
+    right_arrow_pressed: bool,
+    left_arrow_pressed: bool,
+    up_arrow_pressed: bool,
+    down_arrow_pressed: bool,
+    animate: bool,
+}
+
+struct LightState {
+    position: Point3<f32>,
+    direction: Vector3<f32>,
+    color: Vector4<f32>,
+    falloff: Vector4<f32>,
+    view: Matrix4<f32>,
+    projection: Matrix4<f32>,
+}
+
+impl Default for LightState {
+    fn default() -> Self {
+        LightState {
+            position: point3(0.0, 15.0, -30.0),
+            direction: vec3(0.0, 0.0, 1.0),
+            color: vec4(0.7, 0.7, 0.7, 1.0),
+            falloff: vec4(800.0, 1.0, 0.0, 1.0),
+            view: Matrix4::identity(),
+            projection: Matrix4::identity(),
+        }
+    }
 }
 
 impl DXSample for MultithreadingApp {
@@ -47,6 +85,55 @@ impl DXSample for MultithreadingApp {
 
     fn update(&mut self) {
         self.timer.tick();
+
+        let frame_time = self.timer.get_elapsed().as_secs_f32();
+        let frame_change = Rad(2.0 * frame_time);
+
+        if self.input_state.left_arrow_pressed {
+            self.camera.rotate_yaw(-frame_change);
+        }
+        if self.input_state.right_arrow_pressed {
+            self.camera.rotate_yaw(frame_change);
+        }
+        if self.input_state.up_arrow_pressed {
+            self.camera.rotate_pitch(frame_change);
+        }
+        if self.input_state.down_arrow_pressed {
+            self.camera.rotate_pitch(-frame_change);
+        }
+
+        if self.input_state.animate {
+            let window_size = self.window_size();
+            let lights = self.lights.iter_mut();
+            let cameras = self.light_cameras.iter_mut();
+            let lights_and_cameras = lights.zip(cameras);
+
+            for (i, (light, camera)) in lights_and_cameras.enumerate() {
+                let direction = frame_change * -1.0f32.powf(i as f32);
+                let position = Matrix3::from_angle_y(direction).transform_point(light.position);
+
+                let eye = light.position;
+                let at = point3(0.0, 8.0, 0.0);
+                let up = vec3(0.0, 1.0, 0.0);
+
+                light.direction = (at - eye).normalize();
+
+                let ViewAndProjectionMatrices{view, projection} = camera.get_3dview_proj_matrices(
+                    Deg(90.0),
+                    window_size.0 as f32,
+                    window_size.1 as f32,
+                );
+
+                *light = LightState {
+                    position,
+                    view,
+                    projection,
+                    ..*light
+                };
+
+                *camera = Camera { eye, at, up };
+            }
+        }
     }
 
     fn render(&mut self) {
@@ -58,10 +145,8 @@ impl DXSample for MultithreadingApp {
         let r = renderer.render();
 
         let r = match r {
-            Err(e) if is_device_removed(&e) => {
-                self.create_resources()
-            }            
-            _ => r
+            Err(e) if is_device_removed(&e) => self.create_resources(),
+            _ => r,
         };
 
         r.unwrap();
