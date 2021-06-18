@@ -28,7 +28,7 @@ impl Timer {
         self.now = Instant::now();
     }
 
-    pub fn reset(&mut self) {
+    pub fn _reset(&mut self) {
         self.tick();
         self.start = self.now;
     }

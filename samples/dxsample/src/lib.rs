@@ -318,9 +318,9 @@ impl SynchronizedCommandQueue {
             .ExecuteCommandLists(numcommandlists, commandlists)
     }
 
-    pub fn execute_command_lists(&self, command_lists: &Vec<ID3D12GraphicsCommandList>) {
+    pub fn execute_command_lists(&self, command_lists: &[ID3D12GraphicsCommandList]) {
         unsafe {
-            self.ExecuteCommandLists(command_lists.len() as u32, transmute(command_lists.as_ptr()));
+            self.ExecuteCommandLists(command_lists.len() as u32, command_lists.as_ptr() as *mut Option<ID3D12CommandList>);
         }
     }
 

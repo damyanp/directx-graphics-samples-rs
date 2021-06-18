@@ -60,10 +60,10 @@ struct InputState {
 struct LightState {
     position: Point3<f32>,
     direction: Vector3<f32>,
-    color: Vector4<f32>,
-    falloff: Vector4<f32>,
-    view: Matrix4<f32>,
-    projection: Matrix4<f32>,
+    _color: Vector4<f32>,
+    _falloff: Vector4<f32>,
+    _view: Matrix4<f32>,
+    _projection: Matrix4<f32>,
 }
 
 impl Default for LightState {
@@ -71,10 +71,10 @@ impl Default for LightState {
         LightState {
             position: point3(0.0, 15.0, -30.0),
             direction: vec3(0.0, 0.0, 1.0),
-            color: vec4(0.7, 0.7, 0.7, 1.0),
-            falloff: vec4(800.0, 1.0, 0.0, 1.0),
-            view: Matrix4::identity(),
-            projection: Matrix4::identity(),
+            _color: vec4(0.7, 0.7, 0.7, 1.0),
+            _falloff: vec4(800.0, 1.0, 0.0, 1.0),
+            _view: Matrix4::identity(),
+            _projection: Matrix4::identity(),
         }
     }
 }
@@ -119,7 +119,7 @@ impl DXSample for MultithreadingApp {
             let lights_and_cameras = lights.zip(cameras);
 
             for (i, (light, camera)) in lights_and_cameras.enumerate() {
-                let direction = frame_change * -1.0f32.powf(i as f32);
+                let direction = frame_change * (-1.0f32).powf(i as f32);
                 let position = Matrix3::from_angle_y(direction).transform_point(light.position);
 
                 let eye = light.position;
@@ -136,8 +136,8 @@ impl DXSample for MultithreadingApp {
 
                 *light = LightState {
                     position,
-                    view,
-                    projection,
+                    _view: view,
+                    _projection: projection,
                     ..*light
                 };
 
@@ -172,11 +172,7 @@ impl DXSample for MultithreadingApp {
 }
 
 fn is_device_removed(e: &Error) -> bool {
-    match e.code() {
-        DXGI_ERROR_DEVICE_REMOVED => true,
-        DXGI_ERROR_DEVICE_RESET => true,
-        _ => false,
-    }
+    matches!(e.code(), DXGI_ERROR_DEVICE_REMOVED | DXGI_ERROR_DEVICE_RESET)
 }
 
 impl MultithreadingApp {

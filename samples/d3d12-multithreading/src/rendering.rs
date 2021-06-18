@@ -12,12 +12,11 @@ use windows::*;
 use crate::State;
 
 const FRAME_COUNT: usize = 2;
-const MAX_CONCURRENT_TASKS: usize = 6;
 
 pub struct Renderer {
-    device: ID3D12Device,
+    _device: ID3D12Device,
     command_queue: SynchronizedCommandQueue,
-    swap_chain: SwapChain,
+    _swap_chain: SwapChain,
     frames: Frames,
     render_data: Arc<RenderData>,
 }
@@ -28,9 +27,9 @@ unsafe impl Send for Renderer {}
 unsafe impl Sync for Renderer {}
 
 pub struct SwapChain {
-    dxgi_swap_chain: IDXGISwapChain3,
-    render_targets: [ID3D12Resource; FRAME_COUNT],
-    rtv_heap: RtvDescriptorHeap,
+    _dxgi_swap_chain: IDXGISwapChain3,
+    _render_targets: [ID3D12Resource; FRAME_COUNT],
+    _rtv_heap: RtvDescriptorHeap,
 }
 
 pub struct Frames {
@@ -66,16 +65,16 @@ impl Renderer {
         let render_data = Arc::new(RenderData {});
 
         Ok(Renderer {
-            device,
+            _device: device,
             command_queue,
-            swap_chain,
+            _swap_chain: swap_chain,
             frames,
             render_data,
         })
     }
 
-    pub fn render(&mut self, state: &State) -> Result<()> {
-        let frame = self.frames.start_frame(&self.command_queue)?;
+    pub fn render(&mut self, _state: &State) -> Result<()> {
+        let _frame = self.frames.start_frame(&self.command_queue)?;
 
         let cl = self.frames.get_command_list()?;
         let pre_render = task::spawn(Renderer::pre_render(self.render_data.clone(), cl));
@@ -99,7 +98,7 @@ impl Renderer {
     }
 
     async fn pre_render(
-        render_data: Arc<RenderData>,
+        _render_data: Arc<RenderData>,
         cl: ID3D12GraphicsCommandList,
     ) -> Result<ID3D12GraphicsCommandList> {
         sleep(Duration::from_secs(5));        
@@ -108,7 +107,7 @@ impl Renderer {
     }
 
     async fn post_render(
-        render_data: Arc<RenderData>,
+        _render_data: Arc<RenderData>,
         cl: ID3D12GraphicsCommandList,
     ) -> Result<ID3D12GraphicsCommandList> {
         sleep(Duration::from_secs(5));
@@ -140,9 +139,9 @@ impl SwapChain {
         })?;
 
         Ok(SwapChain {
-            dxgi_swap_chain,
-            render_targets,
-            rtv_heap,
+            _dxgi_swap_chain: dxgi_swap_chain,
+            _render_targets: render_targets,
+            _rtv_heap: rtv_heap,
         })
     }
 }
@@ -189,7 +188,7 @@ fn create_swap_chain(
 
 impl Frames {
     fn new(device: &ID3D12Device) -> Result<Frames> {
-        let data = try_array_init(|i| -> Result<Frame> { Ok(Default::default()) })?;
+        let data = try_array_init(|_| -> Result<Frame> { Ok(Default::default()) })?;
         let device = device.cast()?;
 
         Ok(Frames {
@@ -211,7 +210,7 @@ impl Frames {
         command_queue.execute_command_lists(&self.command_lists);
 
         let frame = &mut self.data[self.current_index];
-        frame.end(command_queue);
+        frame.end(command_queue)?;
 
         self.current_index = (self.current_index + 1) % FRAME_COUNT;
         self.idle_command_lists.append(&mut self.command_lists);
