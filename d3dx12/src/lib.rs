@@ -74,6 +74,7 @@ impl ResourceDesc for D3D12_RESOURCE_DESC {
     }
 }
 
+
 pub trait HeapProperties {
     fn default() -> Self;
     fn standard(heap_type: D3D12_HEAP_TYPE) -> Self;

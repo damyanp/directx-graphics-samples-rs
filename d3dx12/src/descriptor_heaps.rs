@@ -205,6 +205,25 @@ impl DsvDescriptorHeap {
     }
 }
 
+pub trait DepthStencilViewDesc {
+    fn tex2d(format: DXGI_FORMAT, mip_slice: u32) -> Self;
+}
+
+impl DepthStencilViewDesc for D3D12_DEPTH_STENCIL_VIEW_DESC {
+    fn tex2d(format: DXGI_FORMAT, mip_slice: u32) -> D3D12_DEPTH_STENCIL_VIEW_DESC {
+        D3D12_DEPTH_STENCIL_VIEW_DESC {
+            Format: format,
+            ViewDimension: D3D12_DSV_DIMENSION_TEXTURE2D,
+            Anonymous: D3D12_DEPTH_STENCIL_VIEW_DESC_0 {
+                Texture2D: D3D12_TEX2D_DSV {
+                    MipSlice: mip_slice,
+                },
+            },
+            Flags: D3D12_DSV_FLAG_NONE,
+        }
+    }
+}
+
 pub struct CbvSrvUavDescriptorHeap {
     pub heap: ID3D12DescriptorHeap,
     pub start_cpu_handle: D3D12_CPU_DESCRIPTOR_HANDLE,

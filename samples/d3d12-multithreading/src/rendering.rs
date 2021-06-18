@@ -16,23 +16,15 @@ const FRAME_COUNT: usize = 2;
 pub struct Renderer {
     _device: ID3D12Device,
     command_queue: SynchronizedCommandQueue,
-    _swap_chain: SwapChain,
+    _rtv_heap: RtvDescriptorHeap,
+    _dsv_heap: DsvDescriptorHeap,
     frames: Frames,
-}
-
-unsafe impl Send for RenderData {}
-unsafe impl Sync for RenderData {}
-
-pub struct SwapChain {
-    _dxgi_swap_chain: IDXGISwapChain3,
-    _render_targets: [ID3D12Resource; FRAME_COUNT],
-    rtv_heap: RtvDescriptorHeap,
-    dsv_heap: DsvDescriptorHeap,
 }
 
 pub struct Frames {
     device: ID3D12Device4, // TODO: do we need the one in Renderer as well?
     current_index: usize,
+    swap_chain: IDXGISwapChain3,
     frames: [Frame; FRAME_COUNT],
     idle_command_lists: Vec<ID3D12GraphicsCommandList>,
     command_lists: Vec<ID3D12GraphicsCommandList>,
@@ -46,9 +38,14 @@ pub struct Frame {
 }
 
 struct RenderData {
+    render_target: ID3D12Resource,
+    _shadow_texture: ID3D12Resource,
     render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
     shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
 }
+
+unsafe impl Send for RenderData {}
+unsafe impl Sync for RenderData {}
 
 impl Renderer {
     pub fn new(
@@ -61,15 +58,18 @@ impl Renderer {
 
         let command_queue = SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
 
-        let swap_chain = SwapChain::new(&factory, &device, &command_queue, hwnd, width, height)?;
+        let swap_chain = create_swap_chain(&factory, &command_queue.queue, hwnd, width, height)?;
+        let rtv_heap = RtvDescriptorHeap::new(&device, FRAME_COUNT)?;
+        let dsv_heap = DsvDescriptorHeap::new(&device, FRAME_COUNT)?;
 
-        let frames = Frames::new(&device, &swap_chain)?;
+        let frames = Frames::new(&device, swap_chain, &rtv_heap, &dsv_heap)?;
 
         Ok(Renderer {
             _device: device,
             command_queue,
-            _swap_chain: swap_chain,
             frames,
+            _rtv_heap: rtv_heap,
+            _dsv_heap: dsv_heap,
         })
     }
 
@@ -98,7 +98,14 @@ impl Renderer {
                     std::ptr::null(),
                 );
 
-                // TODO: transition back buffer
+                cl.ResourceBarrier(
+                    1,
+                    &transition_barrier(
+                        &render_data.render_target,
+                        D3D12_RESOURCE_STATE_PRESENT,
+                        D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    ),
+                );
 
                 // clear rtv & depth stencil
                 cl.ClearRenderTargetView(
@@ -109,7 +116,7 @@ impl Renderer {
                 );
 
                 cl.ClearDepthStencilView(
-                    D3D12_CPU_DESCRIPTOR_HANDLE { ptr: 0 }, // TODO
+                    render_data.shadow_depth_view,
                     D3D12_CLEAR_FLAG_DEPTH,
                     1.0,
                     0,
@@ -121,8 +128,19 @@ impl Renderer {
             }
         });
 
-        let post_render =
-            spawn_async_render_task!(cl, render_data, { unsafe { cl.Close().ok()? } });
+        let post_render = spawn_async_render_task!(cl, {
+            unsafe {
+                cl.ResourceBarrier(
+                    1,
+                    &transition_barrier(
+                        &render_data.render_target,
+                        D3D12_RESOURCE_STATE_RENDER_TARGET,
+                        D3D12_RESOURCE_STATE_PRESENT,
+                    ),
+                );
+                cl.Close().ok()?
+            }
+        });
 
         task::block_on(async {
             self.frames.command_lists.push(pre_render.await?);
@@ -130,53 +148,9 @@ impl Renderer {
             Ok::<(), Error>(()) // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
         })?;
 
-        //let cl = self.frames.get_command_list()?;
-        //let post_render = self.post_render(cl);
-
-        //let render_futures = join(pre_render, post_render);
-
         self.frames.end_frame(&mut self.command_queue)?;
+
         Ok(())
-    }
-}
-
-impl SwapChain {
-    fn new(
-        factory: &IDXGIFactory4,
-        device: &ID3D12Device,
-        command_queue: &SynchronizedCommandQueue,
-        hwnd: &HWND,
-        width: u32,
-        height: u32,
-    ) -> Result<SwapChain> {
-        let dxgi_swap_chain =
-            create_swap_chain(factory, &command_queue.queue, hwnd, width, height)?;
-
-        let rtv_heap = RtvDescriptorHeap::new(device, FRAME_COUNT)?;
-        let dsv_heap = DsvDescriptorHeap::new(device, FRAME_COUNT)?;
-
-        let render_targets = try_array_init(|i| -> Result<ID3D12Resource> {
-            let render_target: ID3D12Resource = unsafe { dxgi_swap_chain.GetBuffer(i as u32) }?;
-            unsafe {
-                rtv_heap.create_render_target_view(device, &render_target, None, i);
-            }
-            Ok(render_target)
-        })?;
-
-        Ok(SwapChain {
-            _dxgi_swap_chain: dxgi_swap_chain,
-            _render_targets: render_targets,
-            rtv_heap,
-            dsv_heap,
-        })
-    }
-
-    fn get_render_target_view(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        self.rtv_heap.get_cpu_descriptor_handle(index)
-    }
-
-    fn get_depth_stencil_view(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        self.dsv_heap.get_cpu_descriptor_handle(index)
     }
 }
 
@@ -221,7 +195,12 @@ fn create_swap_chain(
 }
 
 impl Frames {
-    fn new(device: &ID3D12Device, swap_chain: &SwapChain) -> Result<Frames> {
+    fn new(
+        device: &ID3D12Device,
+        swap_chain: IDXGISwapChain3,
+        rtv_heap: &RtvDescriptorHeap,
+        dsv_heap: &DsvDescriptorHeap,
+    ) -> Result<Frames> {
         let frames = try_array_init(|i| -> Result<Frame> {
             Ok(Frame {
                 command_allocators: Default::default(),
@@ -229,8 +208,9 @@ impl Frames {
                 fence_value: Default::default(),
                 render_data: Arc::new(RenderData::new(
                     device,
-                    swap_chain.get_render_target_view(i),
-                    D3D12_CPU_DESCRIPTOR_HANDLE { ptr: 0 },
+                    unsafe { swap_chain.GetBuffer(i as u32)? },
+                    rtv_heap.get_cpu_descriptor_handle(i),
+                    dsv_heap.get_cpu_descriptor_handle(i),
                 )?),
             })
         })?;
@@ -240,6 +220,7 @@ impl Frames {
         Ok(Frames {
             device,
             current_index: 0,
+            swap_chain,
             frames,
             idle_command_lists: Default::default(),
             command_lists: Default::default(),
@@ -255,12 +236,16 @@ impl Frames {
     fn end_frame(&mut self, command_queue: &mut SynchronizedCommandQueue) -> Result<()> {
         command_queue.execute_command_lists(&self.command_lists);
 
+        unsafe { self.swap_chain.Present(1, 0).ok()? }
+
         let frame = &mut self.frames[self.current_index];
         frame.end(command_queue)?;
 
-        self.current_index = (self.current_index + 1) % FRAME_COUNT;
+        self.current_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
+
         self.idle_command_lists.append(&mut self.command_lists);
         assert_eq!(self.command_lists.len(), 0);
+
         Ok(())
     }
 
@@ -321,10 +306,50 @@ impl Frame {
 impl RenderData {
     fn new(
         device: &ID3D12Device,
+        _render_target: ID3D12Resource,
         render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
         shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
     ) -> Result<RenderData> {
+        let rt_desc = unsafe { _render_target.GetDesc() };
+
+        let shadow_texture_desc = D3D12_RESOURCE_DESC {
+            Flags: D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
+            ..ResourceDesc::tex2d(DXGI_FORMAT_R32_TYPELESS, rt_desc.Width, rt_desc.Height)
+        };
+
+        let _shadow_texture = unsafe {
+            device.CreateCommittedResource(
+                &HeapProperties::default(),
+                D3D12_HEAP_FLAG_NONE,
+                &shadow_texture_desc,
+                D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                &D3D12_CLEAR_VALUE {
+                    Format: DXGI_FORMAT_D32_FLOAT,
+                    Anonymous: D3D12_CLEAR_VALUE_0 {
+                        DepthStencil: D3D12_DEPTH_STENCIL_VALUE {
+                            Depth: 1.0,
+                            Stencil: 0,
+                        },
+                    },
+                },
+            )?
+        };
+
+        unsafe {
+            device.CreateRenderTargetView(&_render_target, std::ptr::null(), render_target_view);
+
+            // Note: original sample explicitly creates a DSV_DESC, but it looks
+            // like null should work.
+            device.CreateDepthStencilView(
+                &_shadow_texture,
+                &D3D12_DEPTH_STENCIL_VIEW_DESC::tex2d(DXGI_FORMAT_D32_FLOAT, 0),
+                shadow_depth_view,
+            );
+        }
+
         Ok(RenderData {
+            render_target: _render_target,
+            _shadow_texture,
             render_target_view,
             shadow_depth_view,
         })
