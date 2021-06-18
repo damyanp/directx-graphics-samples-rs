@@ -45,7 +45,7 @@ pub struct Frame {
 #[allow(dead_code)]
 struct RenderData {
     render_target: ID3D12Resource,
-    _shadow_texture: ID3D12Resource,
+    shadow_texture: ID3D12Resource,
     _shadow_cb: ID3D12Resource,
     _scene_cb: ID3D12Resource,
     shadow_cb_ptr: *mut SceneConstantBuffer,
@@ -151,6 +151,7 @@ impl Renderer {
 
         let pre_render = spawn_async_render_task!(cl, render_data, {
             unsafe {
+                // Clear the depth stencil buffer in preparation for rendering the shadow map.
                 cl.ClearDepthStencilView(
                     render_data.shadow_depth_view,
                     D3D12_CLEAR_FLAG_DEPTH,
@@ -160,6 +161,7 @@ impl Renderer {
                     std::ptr::null(),
                 );
 
+                // Indicate that the back buffer will be used as a render target.
                 cl.ResourceBarrier(
                     1,
                     &transition_barrier(
@@ -169,7 +171,7 @@ impl Renderer {
                     ),
                 );
 
-                // clear rtv & depth stencil
+                // Clear the render target and depth stencil.
                 cl.ClearRenderTargetView(
                     render_data.render_target_view,
                     [0.0, 0.0, 0.0, 1.0].as_ptr(),
@@ -190,15 +192,41 @@ impl Renderer {
             }
         });
 
-        let post_render = spawn_async_render_task!(cl, {
+        let mid_render = spawn_async_render_task!(cl, render_data, {
             unsafe {
                 cl.ResourceBarrier(
                     1,
+                    // Transition the shadow map from writeable to readable.
                     &transition_barrier(
-                        &render_data.render_target,
-                        D3D12_RESOURCE_STATE_RENDER_TARGET,
-                        D3D12_RESOURCE_STATE_PRESENT,
+                        &render_data.shadow_texture,
+                        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                     ),
+                );
+
+                cl.Close().ok()?
+            }
+        });
+
+        let post_render = spawn_async_render_task!(cl, {
+            unsafe {
+                cl.ResourceBarrier(
+                    2,
+                    [
+                        // Transition the shadow map from readable to writeable
+                        transition_barrier(
+                            &render_data.shadow_texture,
+                            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                            D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                        ),
+                        // Indicate that the back buffer will now be used to present
+                        transition_barrier(
+                            &render_data.render_target,
+                            D3D12_RESOURCE_STATE_RENDER_TARGET,
+                            D3D12_RESOURCE_STATE_PRESENT,
+                        ),
+                    ]
+                    .as_ptr(),
                 );
                 cl.Close().ok()?
             }
@@ -206,6 +234,7 @@ impl Renderer {
 
         task::block_on(async {
             self.frames.command_lists.push(pre_render.await?);
+            self.frames.command_lists.push(mid_render.await?);
             self.frames.command_lists.push(post_render.await?);
             Ok::<(), Error>(()) // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
         })?;
@@ -479,7 +508,7 @@ impl RenderData {
 
         Ok(RenderData {
             render_target,
-            _shadow_texture: shadow_texture,
+            shadow_texture,
             _shadow_cb: shadow_cb,
             _scene_cb: scene_cb,
             shadow_cb_ptr,
