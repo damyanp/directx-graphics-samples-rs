@@ -215,7 +215,7 @@ impl Frames {
 
         self.current_index = (self.current_index + 1) % FRAME_COUNT;
         self.idle_command_lists.append(&mut self.command_lists);
-
+        assert_eq!(self.command_lists.len(), 0);
         Ok(())
     }
 
