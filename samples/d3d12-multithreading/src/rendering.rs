@@ -1,11 +1,12 @@
 use array_init::try_array_init;
+use async_std::task;
 use bindings::Windows::Win32::{
     Foundation::HWND,
     Graphics::{Direct3D12::*, Dxgi::*},
 };
 use d3dx12::*;
 use dxsample::*;
-use futures::{*, executor::*, future::*, task::SpawnExt};
+use std::{sync::Arc, thread::sleep, time::Duration};
 use windows::*;
 
 use crate::State;
@@ -17,12 +18,14 @@ pub struct Renderer {
     device: ID3D12Device,
     command_queue: SynchronizedCommandQueue,
     swap_chain: SwapChain,
-    thread_pool: ThreadPool,
     frames: Frames,
+    render_data: Arc<RenderData>,
 }
 
-unsafe impl Send for Renderer{}
-unsafe impl Sync for Renderer{}
+struct RenderData {}
+
+unsafe impl Send for Renderer {}
+unsafe impl Sync for Renderer {}
 
 pub struct SwapChain {
     dxgi_swap_chain: IDXGISwapChain3,
@@ -58,18 +61,16 @@ impl Renderer {
 
         let swap_chain = SwapChain::new(&factory, &device, &command_queue, hwnd, width, height)?;
 
-        let mut thread_pool_builder = ThreadPoolBuilder::new();
-        thread_pool_builder.name_prefix("renderer-");
-        let thread_pool = thread_pool_builder.create().unwrap();
-
         let frames = Frames::new(&device)?;
+
+        let render_data = Arc::new(RenderData {});
 
         Ok(Renderer {
             device,
             command_queue,
             swap_chain,
-            thread_pool,
             frames,
+            render_data,
         })
     }
 
@@ -77,26 +78,40 @@ impl Renderer {
         let frame = self.frames.start_frame(&self.command_queue)?;
 
         let cl = self.frames.get_command_list()?;
-        let pre_render = self.pre_render(cl);
+        let pre_render = task::spawn(Renderer::pre_render(self.render_data.clone(), cl));
+
+        let cl = self.frames.get_command_list()?;
+        let post_render = task::spawn(Renderer::post_render(self.render_data.clone(), cl));
+
+        task::block_on(async {
+            self.frames.command_lists.push(pre_render.await?);
+            self.frames.command_lists.push(post_render.await?);
+            Ok::<(), Error>(())  // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
+        })?;
 
         //let cl = self.frames.get_command_list()?;
         //let post_render = self.post_render(cl);
 
-        //let render_futures = join(pre_render, post_render);        
-
-        let x = self.thread_pool.spawn_obj_ok(pre_render);
-
+        //let render_futures = join(pre_render, post_render);
 
         self.frames.end_frame(&mut self.command_queue)?;
         Ok(())
     }
 
-    async fn pre_render(&self, cl: ID3D12GraphicsCommandList) -> Result<ID3D12GraphicsCommandList> {
+    async fn pre_render(
+        render_data: Arc<RenderData>,
+        cl: ID3D12GraphicsCommandList,
+    ) -> Result<ID3D12GraphicsCommandList> {
+        sleep(Duration::from_secs(5));        
         unsafe { cl.Close() }.ok()?;
         Ok(cl)
     }
 
-    async fn post_render(&self, cl: ID3D12GraphicsCommandList) -> Result<ID3D12GraphicsCommandList> {
+    async fn post_render(
+        render_data: Arc<RenderData>,
+        cl: ID3D12GraphicsCommandList,
+    ) -> Result<ID3D12GraphicsCommandList> {
+        sleep(Duration::from_secs(5));
         unsafe { cl.Close() }.ok()?;
         Ok(cl)
     }

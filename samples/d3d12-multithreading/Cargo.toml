@@ -12,3 +12,4 @@ futures = { version = "0.3.*", features = ["thread-pool"] }
 d3dx12 = { path = "../../d3dx12" }
 dxsample = { path = "../dxsample" }
 windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }
+async-std = "1.9.0"
