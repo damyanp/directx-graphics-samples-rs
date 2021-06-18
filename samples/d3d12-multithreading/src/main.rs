@@ -33,10 +33,16 @@ const NUM_CAMERAS: usize = 3;
 
 #[derive(Default)]
 struct MultithreadingApp {
+    command_line: SampleCommandLine,
     hwnd: HWND,
+    state: State,
     renderer: Option<Renderer>,
     input_state: InputState,
     timer: Timer,
+}
+
+#[derive(Default)]
+pub struct State {
     camera: Camera,
     lights: [LightState; NUM_CAMERAS],
     light_cameras: [Camera; NUM_CAMERAS],
@@ -89,23 +95,27 @@ impl DXSample for MultithreadingApp {
         let frame_time = self.timer.get_elapsed().as_secs_f32();
         let frame_change = Rad(2.0 * frame_time);
 
-        if self.input_state.left_arrow_pressed {
-            self.camera.rotate_yaw(-frame_change);
+        let camera = &mut self.state.camera;
+        let input = &mut self.input_state;
+
+        if input.left_arrow_pressed {
+            camera.rotate_yaw(-frame_change);
         }
-        if self.input_state.right_arrow_pressed {
-            self.camera.rotate_yaw(frame_change);
+        if input.right_arrow_pressed {
+            camera.rotate_yaw(frame_change);
         }
-        if self.input_state.up_arrow_pressed {
-            self.camera.rotate_pitch(frame_change);
+        if input.up_arrow_pressed {
+            camera.rotate_pitch(frame_change);
         }
-        if self.input_state.down_arrow_pressed {
-            self.camera.rotate_pitch(-frame_change);
+        if input.down_arrow_pressed {
+            camera.rotate_pitch(-frame_change);
         }
 
-        if self.input_state.animate {
+        if input.animate {            
             let window_size = self.window_size();
-            let lights = self.lights.iter_mut();
-            let cameras = self.light_cameras.iter_mut();
+            let state = &mut self.state;
+            let lights = state.lights.iter_mut();
+            let cameras =state.light_cameras.iter_mut();
             let lights_and_cameras = lights.zip(cameras);
 
             for (i, (light, camera)) in lights_and_cameras.enumerate() {
@@ -142,7 +152,7 @@ impl DXSample for MultithreadingApp {
             _ => return,
         };
 
-        let r = renderer.render();
+        let r = renderer.render(&self.state);
 
         let r = match r {
             Err(e) if is_device_removed(&e) => self.create_resources(),
@@ -171,7 +181,8 @@ fn is_device_removed(e: &Error) -> bool {
 
 impl MultithreadingApp {
     fn create_resources(&mut self) -> Result<()> {
-        self.renderer = Some(Renderer::new(&self.hwnd)?);
+        let (width, height) = self.window_size();
+        self.renderer = Some(Renderer::new(&self.command_line, &self.hwnd, width as u32, height as u32)?);
         Ok(())
     }
 }
