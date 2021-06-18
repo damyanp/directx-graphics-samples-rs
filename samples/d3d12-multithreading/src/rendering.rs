@@ -6,7 +6,7 @@ use bindings::Windows::Win32::{
 };
 use d3dx12::*;
 use dxsample::*;
-use std::{sync::Arc, thread::sleep, time::Duration};
+use std::sync::Arc;
 use windows::*;
 
 use crate::State;
@@ -18,33 +18,36 @@ pub struct Renderer {
     command_queue: SynchronizedCommandQueue,
     _swap_chain: SwapChain,
     frames: Frames,
-    render_data: Arc<RenderData>,
 }
 
-struct RenderData {}
-
-unsafe impl Send for Renderer {}
-unsafe impl Sync for Renderer {}
+unsafe impl Send for RenderData {}
+unsafe impl Sync for RenderData {}
 
 pub struct SwapChain {
     _dxgi_swap_chain: IDXGISwapChain3,
     _render_targets: [ID3D12Resource; FRAME_COUNT],
-    _rtv_heap: RtvDescriptorHeap,
+    rtv_heap: RtvDescriptorHeap,
+    dsv_heap: DsvDescriptorHeap,
 }
 
 pub struct Frames {
     device: ID3D12Device4, // TODO: do we need the one in Renderer as well?
     current_index: usize,
-    data: [Frame; FRAME_COUNT],
+    frames: [Frame; FRAME_COUNT],
     idle_command_lists: Vec<ID3D12GraphicsCommandList>,
     command_lists: Vec<ID3D12GraphicsCommandList>,
 }
 
-#[derive(Default)]
 pub struct Frame {
     command_allocators: Vec<ID3D12CommandAllocator>,
     next_command_allocator: usize,
     fence_value: u64,
+    render_data: Arc<RenderData>,
+}
+
+struct RenderData {
+    render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+    shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
 }
 
 impl Renderer {
@@ -60,32 +63,71 @@ impl Renderer {
 
         let swap_chain = SwapChain::new(&factory, &device, &command_queue, hwnd, width, height)?;
 
-        let frames = Frames::new(&device)?;
-
-        let render_data = Arc::new(RenderData {});
+        let frames = Frames::new(&device, &swap_chain)?;
 
         Ok(Renderer {
             _device: device,
             command_queue,
             _swap_chain: swap_chain,
             frames,
-            render_data,
         })
     }
 
     pub fn render(&mut self, _state: &State) -> Result<()> {
-        let _frame = self.frames.start_frame(&self.command_queue)?;
+        let render_data = self.frames.start_frame(&self.command_queue)?;
 
-        let cl = self.frames.get_command_list()?;
-        let pre_render = task::spawn(Renderer::pre_render(self.render_data.clone(), cl));
+        macro_rules! spawn_async_render_task {
+            ( $cl:ident $(, $render_data:ident )?, $block:block ) => {{
+                let $cl = self.frames.get_next_command_list()?;
+                $( let $render_data = render_data.clone(); )?
+                task::spawn(async move {
+                    $block
+                    Ok::<ID3D12GraphicsCommandList, Error>($cl)
+                })}
+            };
+        }
 
-        let cl = self.frames.get_command_list()?;
-        let post_render = task::spawn(Renderer::post_render(self.render_data.clone(), cl));
+        let pre_render = spawn_async_render_task!(cl, render_data, {
+            unsafe {
+                cl.ClearDepthStencilView(
+                    render_data.shadow_depth_view,
+                    D3D12_CLEAR_FLAG_DEPTH,
+                    1.0,
+                    0,
+                    0,
+                    std::ptr::null(),
+                );
+
+                // TODO: transition back buffer
+
+                // clear rtv & depth stencil
+                cl.ClearRenderTargetView(
+                    render_data.render_target_view,
+                    [0.0, 0.0, 0.0, 1.0].as_ptr(),
+                    0,
+                    std::ptr::null(),
+                );
+
+                cl.ClearDepthStencilView(
+                    D3D12_CPU_DESCRIPTOR_HANDLE { ptr: 0 }, // TODO
+                    D3D12_CLEAR_FLAG_DEPTH,
+                    1.0,
+                    0,
+                    0,
+                    std::ptr::null(),
+                );
+
+                cl.Close().ok()?
+            }
+        });
+
+        let post_render =
+            spawn_async_render_task!(cl, render_data, { unsafe { cl.Close().ok()? } });
 
         task::block_on(async {
             self.frames.command_lists.push(pre_render.await?);
             self.frames.command_lists.push(post_render.await?);
-            Ok::<(), Error>(())  // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
+            Ok::<(), Error>(()) // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
         })?;
 
         //let cl = self.frames.get_command_list()?;
@@ -95,24 +137,6 @@ impl Renderer {
 
         self.frames.end_frame(&mut self.command_queue)?;
         Ok(())
-    }
-
-    async fn pre_render(
-        _render_data: Arc<RenderData>,
-        cl: ID3D12GraphicsCommandList,
-    ) -> Result<ID3D12GraphicsCommandList> {
-        sleep(Duration::from_secs(5));        
-        unsafe { cl.Close() }.ok()?;
-        Ok(cl)
-    }
-
-    async fn post_render(
-        _render_data: Arc<RenderData>,
-        cl: ID3D12GraphicsCommandList,
-    ) -> Result<ID3D12GraphicsCommandList> {
-        sleep(Duration::from_secs(5));
-        unsafe { cl.Close() }.ok()?;
-        Ok(cl)
     }
 }
 
@@ -129,6 +153,7 @@ impl SwapChain {
             create_swap_chain(factory, &command_queue.queue, hwnd, width, height)?;
 
         let rtv_heap = RtvDescriptorHeap::new(device, FRAME_COUNT)?;
+        let dsv_heap = DsvDescriptorHeap::new(device, FRAME_COUNT)?;
 
         let render_targets = try_array_init(|i| -> Result<ID3D12Resource> {
             let render_target: ID3D12Resource = unsafe { dxgi_swap_chain.GetBuffer(i as u32) }?;
@@ -141,8 +166,17 @@ impl SwapChain {
         Ok(SwapChain {
             _dxgi_swap_chain: dxgi_swap_chain,
             _render_targets: render_targets,
-            _rtv_heap: rtv_heap,
+            rtv_heap,
+            dsv_heap,
         })
+    }
+
+    fn get_render_target_view(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        self.rtv_heap.get_cpu_descriptor_handle(index)
+    }
+
+    fn get_depth_stencil_view(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        self.dsv_heap.get_cpu_descriptor_handle(index)
     }
 }
 
@@ -187,29 +221,41 @@ fn create_swap_chain(
 }
 
 impl Frames {
-    fn new(device: &ID3D12Device) -> Result<Frames> {
-        let data = try_array_init(|_| -> Result<Frame> { Ok(Default::default()) })?;
+    fn new(device: &ID3D12Device, swap_chain: &SwapChain) -> Result<Frames> {
+        let frames = try_array_init(|i| -> Result<Frame> {
+            Ok(Frame {
+                command_allocators: Default::default(),
+                next_command_allocator: Default::default(),
+                fence_value: Default::default(),
+                render_data: Arc::new(RenderData::new(
+                    device,
+                    swap_chain.get_render_target_view(i),
+                    D3D12_CPU_DESCRIPTOR_HANDLE { ptr: 0 },
+                )?),
+            })
+        })?;
+
         let device = device.cast()?;
 
         Ok(Frames {
             device,
             current_index: 0,
-            data,
+            frames,
             idle_command_lists: Default::default(),
             command_lists: Default::default(),
         })
     }
 
-    fn start_frame(&mut self, command_queue: &SynchronizedCommandQueue) -> Result<&mut Frame> {
-        let frame = &mut self.data[self.current_index];
+    fn start_frame(&mut self, command_queue: &SynchronizedCommandQueue) -> Result<Arc<RenderData>> {
+        let frame = &mut self.frames[self.current_index];
         frame.start(command_queue)?;
-        Ok(frame)
+        Ok(frame.render_data.clone())
     }
 
     fn end_frame(&mut self, command_queue: &mut SynchronizedCommandQueue) -> Result<()> {
         command_queue.execute_command_lists(&self.command_lists);
 
-        let frame = &mut self.data[self.current_index];
+        let frame = &mut self.frames[self.current_index];
         frame.end(command_queue)?;
 
         self.current_index = (self.current_index + 1) % FRAME_COUNT;
@@ -218,7 +264,7 @@ impl Frames {
         Ok(())
     }
 
-    fn get_command_list(&mut self) -> Result<ID3D12GraphicsCommandList> {
+    fn get_next_command_list(&mut self) -> Result<ID3D12GraphicsCommandList> {
         let command_list = match self.idle_command_lists.pop() {
             Some(command_list) => command_list,
             None => unsafe {
@@ -230,7 +276,7 @@ impl Frames {
             }?,
         };
 
-        let frame = &mut self.data[self.current_index];
+        let frame = &mut self.frames[self.current_index];
 
         unsafe {
             command_list
@@ -269,5 +315,18 @@ impl Frame {
         self.next_command_allocator += 1;
 
         Ok(allocator)
+    }
+}
+
+impl RenderData {
+    fn new(
+        device: &ID3D12Device,
+        render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+        shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+    ) -> Result<RenderData> {
+        Ok(RenderData {
+            render_target_view,
+            shadow_depth_view,
+        })
     }
 }

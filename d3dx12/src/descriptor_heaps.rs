@@ -137,6 +137,74 @@ impl RtvDescriptorHeap {
     }
 }
 
+pub struct DsvDescriptorHeap {
+    pub heap: ID3D12DescriptorHeap,
+    pub start_cpu_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
+    pub increment: usize,
+}
+
+impl DescriptorHeap for DsvDescriptorHeap {
+    fn from_fields(
+        heap: ID3D12DescriptorHeap,
+        start_cpu_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
+        start_gpu_handle: D3D12_GPU_DESCRIPTOR_HANDLE,
+        increment: usize,
+    ) -> Self {
+        std::assert_eq!(start_gpu_handle.ptr, 0);
+        DsvDescriptorHeap {
+            heap,
+            start_cpu_handle,
+            increment,
+        }
+    }
+
+    fn start_cpu_handle(&self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        self.start_cpu_handle
+    }
+    fn start_gpu_handle(&self) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+        std::panic!();
+    }
+    fn increment(&self) -> usize {
+        self.increment
+    }
+}
+
+impl DsvDescriptorHeap {
+    pub fn new(device: &ID3D12Device, num_descriptors: usize) -> Result<Self> {
+        DescriptorHeap::create(
+            device,
+            D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+            num_descriptors,
+            D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        )
+    }
+
+    /// Creates a DSV in this heap.
+    ///
+    /// # Safety
+    /// Ensure that dest_index is a valid index in the heap and that the desc is
+    /// valid.
+    pub unsafe fn create_depth_stencil_view<'a>(
+        &self,
+        device: &ID3D12Device,
+        resource: impl IntoParam<'a, ID3D12Resource>,
+        desc: Option<&D3D12_DEPTH_STENCIL_VIEW_DESC>,
+        dest_index: usize,
+    ) {
+        let desc_ptr: *const D3D12_DEPTH_STENCIL_VIEW_DESC = if let Some(desc) = desc {
+            desc
+        } else {
+            std::ptr::null()
+        };
+
+        device.CreateDepthStencilView(
+            resource,
+            desc_ptr,
+            self.get_cpu_descriptor_handle(dest_index),
+        );
+    }
+}
+
 pub struct CbvSrvUavDescriptorHeap {
     pub heap: ID3D12DescriptorHeap,
     pub start_cpu_handle: D3D12_CPU_DESCRIPTOR_HANDLE,

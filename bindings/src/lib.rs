@@ -1,5 +1,7 @@
 windows::include_bindings!();
 
-unsafe impl Send for Windows::Win32::Graphics::Direct3D12::ID3D12GraphicsCommandList{}
-unsafe impl Sync for Windows::Win32::Graphics::Direct3D12::ID3D12GraphicsCommandList{}
+use Windows::Win32::Graphics::Direct3D12::*;
+
+unsafe impl Send for ID3D12GraphicsCommandList{}
+unsafe impl Sync for ID3D12GraphicsCommandList{}
 
