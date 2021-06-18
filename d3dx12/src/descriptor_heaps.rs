@@ -259,6 +259,11 @@ impl DescriptorHeap for CbvSrvUavDescriptorHeap {
     }
 }
 
+pub struct DescriptorHandles {
+    pub cpu: D3D12_CPU_DESCRIPTOR_HANDLE,
+    pub gpu: D3D12_GPU_DESCRIPTOR_HANDLE,
+}
+
 impl CbvSrvUavDescriptorHeap {
     pub fn new(
         device: &ID3D12Device,
@@ -271,6 +276,22 @@ impl CbvSrvUavDescriptorHeap {
             num_descriptors,
             flags,
         )
+    }
+
+    pub fn slice(&self, start_index: usize) -> Self {
+        Self::from_fields(
+            self.heap.clone(), // TODO: this clone is icky
+            self.get_cpu_descriptor_handle(start_index),
+            self.get_gpu_descriptor_handle(start_index),
+            self.increment(),
+        )
+    }
+
+    pub fn get_descriptor_handles(&self, index: usize) -> DescriptorHandles {
+        DescriptorHandles {
+            cpu: self.get_cpu_descriptor_handle(index),
+            gpu: self.get_gpu_descriptor_handle(index),
+        }
     }
 
     /// Creates a SRV in this heap.

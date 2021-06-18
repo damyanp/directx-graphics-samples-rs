@@ -16,12 +16,9 @@ use bindings::Windows::Win32::{
     },
 };
 use camera::{Camera, ViewAndProjectionMatrices};
-use cgmath::{
-    point3, vec3, vec4, Deg, InnerSpace, Matrix3, Matrix4, Point3, Rad, SquareMatrix, Transform,
-    Vector3, Vector4,
-};
+use cgmath::{point3, vec3, Deg, InnerSpace, Matrix3, Rad, Transform};
 use dxsample::{run_sample, DXSample, SampleCommandLine};
-use rendering::Renderer;
+use rendering::*;
 use timer::Timer;
 use windows::*;
 
@@ -57,28 +54,6 @@ struct InputState {
     animate: bool,
 }
 
-struct LightState {
-    position: Point3<f32>,
-    direction: Vector3<f32>,
-    _color: Vector4<f32>,
-    _falloff: Vector4<f32>,
-    _view: Matrix4<f32>,
-    _projection: Matrix4<f32>,
-}
-
-impl Default for LightState {
-    fn default() -> Self {
-        LightState {
-            position: point3(0.0, 15.0, -30.0),
-            direction: vec3(0.0, 0.0, 1.0),
-            _color: vec4(0.7, 0.7, 0.7, 1.0),
-            _falloff: vec4(800.0, 1.0, 0.0, 1.0),
-            _view: Matrix4::identity(),
-            _projection: Matrix4::identity(),
-        }
-    }
-}
-
 impl DXSample for MultithreadingApp {
     fn new(_command_line: &SampleCommandLine) -> Result<Self> {
         Ok(MultithreadingApp::default())
@@ -111,11 +86,11 @@ impl DXSample for MultithreadingApp {
             camera.rotate_pitch(-frame_change);
         }
 
-        if input.animate {            
+        if input.animate {
             let window_size = self.window_size();
             let state = &mut self.state;
             let lights = state.lights.iter_mut();
-            let cameras =state.light_cameras.iter_mut();
+            let cameras = state.light_cameras.iter_mut();
             let lights_and_cameras = lights.zip(cameras);
 
             for (i, (light, camera)) in lights_and_cameras.enumerate() {
@@ -128,11 +103,12 @@ impl DXSample for MultithreadingApp {
 
                 light.direction = (at - eye).normalize();
 
-                let ViewAndProjectionMatrices{view, projection} = camera.get_3dview_proj_matrices(
-                    Deg(90.0),
-                    window_size.0 as f32,
-                    window_size.1 as f32,
-                );
+                let ViewAndProjectionMatrices { view, projection } = camera
+                    .get_3dview_proj_matrices(
+                        Deg(90.0),
+                        window_size.0 as f32,
+                        window_size.1 as f32,
+                    );
 
                 *light = LightState {
                     position,
@@ -172,13 +148,21 @@ impl DXSample for MultithreadingApp {
 }
 
 fn is_device_removed(e: &Error) -> bool {
-    matches!(e.code(), DXGI_ERROR_DEVICE_REMOVED | DXGI_ERROR_DEVICE_RESET)
+    matches!(
+        e.code(),
+        DXGI_ERROR_DEVICE_REMOVED | DXGI_ERROR_DEVICE_RESET
+    )
 }
 
 impl MultithreadingApp {
     fn create_resources(&mut self) -> Result<()> {
         let (width, height) = self.window_size();
-        self.renderer = Some(Renderer::new(&self.command_line, &self.hwnd, width as u32, height as u32)?);
+        self.renderer = Some(Renderer::new(
+            &self.command_line,
+            &self.hwnd,
+            width as u32,
+            height as u32,
+        )?);
         Ok(())
     }
 }

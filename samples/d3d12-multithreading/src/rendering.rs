@@ -4,20 +4,25 @@ use bindings::Windows::Win32::{
     Foundation::HWND,
     Graphics::{Direct3D12::*, Dxgi::*},
 };
+use cgmath::{point3, vec3, vec4, Matrix4, Point3, SquareMatrix, Vector3, Vector4};
 use d3dx12::*;
 use dxsample::*;
-use std::sync::Arc;
+use static_assertions::const_assert_eq;
+use std::{intrinsics::transmute, sync::Arc};
 use windows::*;
 
 use crate::State;
 
 const FRAME_COUNT: usize = 2;
+const PER_FRAME_GPU_DESCRIPTOR_COUNT: usize = 3;
+const GPU_DESCRIPTOR_COUNT: usize = FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
 
 pub struct Renderer {
     _device: ID3D12Device,
     command_queue: SynchronizedCommandQueue,
-    _rtv_heap: RtvDescriptorHeap,
-    _dsv_heap: DsvDescriptorHeap,
+    _rtv_descriptor_heap: RtvDescriptorHeap,
+    _dsv_descriptor_heap: DsvDescriptorHeap,
+    _gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
     frames: Frames,
 }
 
@@ -37,11 +42,56 @@ pub struct Frame {
     render_data: Arc<RenderData>,
 }
 
+#[allow(dead_code)]
 struct RenderData {
     render_target: ID3D12Resource,
     _shadow_texture: ID3D12Resource,
+    _shadow_cb: ID3D12Resource,
+    _scene_cb: ID3D12Resource,
+    shadow_cb_ptr: *mut SceneConstantBuffer,
+    scene_cb_ptr: *mut SceneConstantBuffer,
     render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
     shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+}
+
+#[repr(C, align(256))]
+struct SceneConstantBuffer {
+    model: Matrix4<f32>,
+    view: Matrix4<f32>,
+    projection: Matrix4<f32>,
+    ambient_color: Vector4<f32>,
+    sample_shadow_map: u32,
+    _padding: [u32; 3], // must be aligned to be made up of N float4s
+    lights: LightState,
+}
+
+const_assert_eq!(
+    std::mem::size_of::<SceneConstantBuffer>()
+        % D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT as usize,
+    0
+);
+
+#[repr(C)]
+pub struct LightState {
+    pub position: Point3<f32>,
+    pub direction: Vector3<f32>,
+    pub _color: Vector4<f32>,
+    pub _falloff: Vector4<f32>,
+    pub _view: Matrix4<f32>,
+    pub _projection: Matrix4<f32>,
+}
+
+impl Default for LightState {
+    fn default() -> Self {
+        LightState {
+            position: point3(0.0, 15.0, -30.0),
+            direction: vec3(0.0, 0.0, 1.0),
+            _color: vec4(0.7, 0.7, 0.7, 1.0),
+            _falloff: vec4(800.0, 1.0, 0.0, 1.0),
+            _view: Matrix4::identity(),
+            _projection: Matrix4::identity(),
+        }
+    }
 }
 
 unsafe impl Send for RenderData {}
@@ -59,17 +109,29 @@ impl Renderer {
         let command_queue = SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
 
         let swap_chain = create_swap_chain(&factory, &command_queue.queue, hwnd, width, height)?;
-        let rtv_heap = RtvDescriptorHeap::new(&device, FRAME_COUNT)?;
-        let dsv_heap = DsvDescriptorHeap::new(&device, FRAME_COUNT)?;
+        let rtv_descriptor_heap = RtvDescriptorHeap::new(&device, FRAME_COUNT)?;
+        let dsv_descriptor_heap = DsvDescriptorHeap::new(&device, FRAME_COUNT)?;
+        let gpu_descriptor_heap = CbvSrvUavDescriptorHeap::new(
+            &device,
+            GPU_DESCRIPTOR_COUNT,
+            D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+        )?;
 
-        let frames = Frames::new(&device, swap_chain, &rtv_heap, &dsv_heap)?;
+        let frames = Frames::new(
+            &device,
+            swap_chain,
+            &rtv_descriptor_heap,
+            &dsv_descriptor_heap,
+            &gpu_descriptor_heap.slice(0), // TODO: leave room for textures
+        )?;
 
         Ok(Renderer {
             _device: device,
             command_queue,
             frames,
-            _rtv_heap: rtv_heap,
-            _dsv_heap: dsv_heap,
+            _rtv_descriptor_heap: rtv_descriptor_heap,
+            _dsv_descriptor_heap: dsv_descriptor_heap,
+            _gpu_descriptor_heap: gpu_descriptor_heap,
         })
     }
 
@@ -198,8 +260,9 @@ impl Frames {
     fn new(
         device: &ID3D12Device,
         swap_chain: IDXGISwapChain3,
-        rtv_heap: &RtvDescriptorHeap,
-        dsv_heap: &DsvDescriptorHeap,
+        rtv_descriptor_heap: &RtvDescriptorHeap,
+        dsv_descriptor_heap: &DsvDescriptorHeap,
+        gpu_descriptor_heap: &CbvSrvUavDescriptorHeap,
     ) -> Result<Frames> {
         let frames = try_array_init(|i| -> Result<Frame> {
             Ok(Frame {
@@ -209,8 +272,9 @@ impl Frames {
                 render_data: Arc::new(RenderData::new(
                     device,
                     unsafe { swap_chain.GetBuffer(i as u32)? },
-                    rtv_heap.get_cpu_descriptor_handle(i),
-                    dsv_heap.get_cpu_descriptor_handle(i),
+                    rtv_descriptor_heap.get_cpu_descriptor_handle(i),
+                    dsv_descriptor_heap.get_cpu_descriptor_handle(i),
+                    &gpu_descriptor_heap.slice(i * PER_FRAME_GPU_DESCRIPTOR_COUNT),
                 )?),
             })
         })?;
@@ -306,18 +370,19 @@ impl Frame {
 impl RenderData {
     fn new(
         device: &ID3D12Device,
-        _render_target: ID3D12Resource,
+        render_target: ID3D12Resource,
         render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
         shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+        gpu_descriptor_heap: &CbvSrvUavDescriptorHeap,
     ) -> Result<RenderData> {
-        let rt_desc = unsafe { _render_target.GetDesc() };
+        let rt_desc = unsafe { render_target.GetDesc() };
 
         let shadow_texture_desc = D3D12_RESOURCE_DESC {
             Flags: D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,
             ..ResourceDesc::tex2d(DXGI_FORMAT_R32_TYPELESS, rt_desc.Width, rt_desc.Height)
         };
 
-        let _shadow_texture = unsafe {
+        let shadow_texture = unsafe {
             device.CreateCommittedResource(
                 &HeapProperties::default(),
                 D3D12_HEAP_FLAG_NONE,
@@ -335,21 +400,90 @@ impl RenderData {
             )?
         };
 
+        let cb_size = std::mem::size_of::<SceneConstantBuffer>();
+        let cb_desc = D3D12_RESOURCE_DESC::buffer(cb_size);
+        let shadow_cb: ID3D12Resource = unsafe {
+            device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
+                D3D12_HEAP_FLAG_NONE,
+                &cb_desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                std::ptr::null(),
+            )?
+        };
+        let scene_cb: ID3D12Resource = unsafe {
+            device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
+                D3D12_HEAP_FLAG_NONE,
+                &cb_desc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                std::ptr::null(),
+            )?
+        };
+
+        let mut shadow_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
+        let mut scene_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
+
         unsafe {
-            device.CreateRenderTargetView(&_render_target, std::ptr::null(), render_target_view);
+            shadow_cb
+                .Map(0, &D3D12_RANGE::default(), transmute(&mut shadow_cb_ptr))
+                .ok()?;
+            scene_cb
+                .Map(0, &D3D12_RANGE::default(), transmute(&mut scene_cb_ptr))
+                .ok()?;
+        }
+
+        let shadow_srv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(0);
+        let shadow_cbv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(1);
+        let scene_cbv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(2);
+
+        unsafe {
+            device.CreateRenderTargetView(&render_target, std::ptr::null(), render_target_view);
 
             // Note: original sample explicitly creates a DSV_DESC, but it looks
             // like null should work.
             device.CreateDepthStencilView(
-                &_shadow_texture,
+                &shadow_texture,
                 &D3D12_DEPTH_STENCIL_VIEW_DESC::tex2d(DXGI_FORMAT_D32_FLOAT, 0),
                 shadow_depth_view,
+            );
+
+            device.CreateShaderResourceView(
+                &shadow_texture,
+                &D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
+                    DXGI_FORMAT_R32_FLOAT,
+                    D3D12_TEX2D_SRV {
+                        MipLevels: 1,
+                        ..Default::default()
+                    },
+                ),
+                shadow_srv_descriptor_handles.cpu,
+            );
+
+            device.CreateConstantBufferView(
+                &D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                    BufferLocation: shadow_cb.GetGPUVirtualAddress(),
+                    SizeInBytes: cb_size as u32,
+                },
+                shadow_cbv_descriptor_handles.cpu,
+            );
+
+            device.CreateConstantBufferView(
+                &D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                    BufferLocation: scene_cb.GetGPUVirtualAddress(),
+                    SizeInBytes: cb_size as u32,
+                },
+                scene_cbv_descriptor_handles.cpu,
             );
         }
 
         Ok(RenderData {
-            render_target: _render_target,
-            _shadow_texture,
+            render_target,
+            _shadow_texture: shadow_texture,
+            _shadow_cb: shadow_cb,
+            _scene_cb: scene_cb,
+            shadow_cb_ptr,
+            scene_cb_ptr,
             render_target_view,
             shadow_depth_view,
         })
