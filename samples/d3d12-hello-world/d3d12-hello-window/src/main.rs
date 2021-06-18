@@ -55,7 +55,7 @@ mod d3d12_hello_window {
                     ..Default::default()
                 },
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                BufferCount: FRAME_COUNT.try_into().unwrap(),
+                BufferCount: FRAME_COUNT as u32,
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
                 ..Default::default()
             };
@@ -202,7 +202,7 @@ mod d3d12_hello_window {
         }
 
         unsafe { command_list.Close() }.ok()
-    }        
+    }
 
     fn wait_for_previous_frame(resources: &mut Resources) {
         // WAITING FOR THE FRAME TO COMPLETE BEFORE CONTINUING IS NOT BEST

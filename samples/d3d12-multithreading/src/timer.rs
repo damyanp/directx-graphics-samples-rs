@@ -19,7 +19,7 @@ pub struct Timer {
 impl Default for Timer {
     fn default() -> Self {
         let now = Instant::now();
-        Timer { start: now, now }        
+        Timer { start: now, now }
     }
 }
 

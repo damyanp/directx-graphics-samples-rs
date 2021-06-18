@@ -1,5 +1,4 @@
 use bindings::Windows::Win32::Graphics::{Direct3D12::*, Dxgi::DXGI_FORMAT};
-use std::convert::TryInto;
 use windows::*;
 
 pub trait DescriptorHeap {
@@ -15,7 +14,7 @@ pub trait DescriptorHeap {
         let heap = unsafe {
             device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: heap_type,
-                NumDescriptors: num_descriptors.try_into().unwrap(),
+                NumDescriptors: num_descriptors as u32,
                 Flags: flags,
                 NodeMask: 0,
             })
@@ -33,8 +32,7 @@ pub trait DescriptorHeap {
     where
         Self: Sized,
     {
-        let increment = unsafe { device.GetDescriptorHandleIncrementSize(heap_type) };
-        let increment = increment.try_into().unwrap();
+        let increment = unsafe { device.GetDescriptorHandleIncrementSize(heap_type) } as usize;
         let start_cpu_handle = unsafe { heap.GetCPUDescriptorHandleForHeapStart() };
         let start_gpu_handle = if flags == D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE {
             unsafe { heap.GetGPUDescriptorHandleForHeapStart() }
@@ -358,7 +356,7 @@ impl ConstantBufferViewDesc for D3D12_CONSTANT_BUFFER_VIEW_DESC {
         unsafe {
             D3D12_CONSTANT_BUFFER_VIEW_DESC {
                 BufferLocation: resource.GetGPUVirtualAddress(),
-                SizeInBytes: resource.GetDesc().Width.try_into().unwrap(),
+                SizeInBytes: resource.GetDesc().Width as u32,
             }
         }
     }

@@ -121,7 +121,7 @@ mod d3d12_hello_constbuffers {
                     ..Default::default()
                 },
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                BufferCount: FRAME_COUNT.try_into().unwrap(),
+                BufferCount: FRAME_COUNT as u32,
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
                 ..Default::default()
             };
@@ -300,7 +300,7 @@ mod d3d12_hello_constbuffers {
         unsafe {
             command_list.SetGraphicsRootSignature(&resources.root_signature);
             let mut heaps = [Some(resources.cbv_heap.heap.clone())];
-            command_list.SetDescriptorHeaps(heaps.len().try_into().unwrap(), transmute(&mut heaps));
+            command_list.SetDescriptorHeaps(heaps.len() as u32, transmute(&mut heaps));
             command_list.SetGraphicsRootDescriptorTable(0, resources.cbv_heap.start_gpu_handle());
             command_list.RSSetViewports(1, &resources.viewport);
             command_list.RSSetScissorRects(1, &resources.scissor_rect);
