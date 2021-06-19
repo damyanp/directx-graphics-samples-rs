@@ -13,6 +13,9 @@ use windows::*;
 
 use crate::State;
 
+mod squidroom;
+use squidroom::*;
+
 const FRAME_COUNT: usize = 2;
 const PER_FRAME_GPU_DESCRIPTOR_COUNT: usize = 3;
 const GPU_DESCRIPTOR_COUNT: usize = FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
