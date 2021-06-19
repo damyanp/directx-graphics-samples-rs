@@ -1,3 +1,5 @@
+use d3dx12::build::copy_data_file;
+
 fn main() {
-    // todo
+    copy_data_file("squidroom.bin");
 }
