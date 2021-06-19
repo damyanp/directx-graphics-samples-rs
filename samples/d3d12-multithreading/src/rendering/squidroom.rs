@@ -16,6 +16,9 @@ const DATA_FILE_NAME: &str = "SquidRoom.bin";
 
 pub struct Resources {
     textures: [ID3D12Resource; TEXTURE_COUNT],
+    geometry_buffer: ID3D12Resource,
+    vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW,
+    index_buffer_view: D3D12_INDEX_BUFFER_VIEW,
 }
 
 pub const TEXTURE_COUNT: usize = TEXTURES.len();
@@ -27,13 +30,27 @@ impl Resources {
         descriptor_heap: &CbvSrvUavDescriptorHeap,
         sampler_descriptor_heap: &SamplerDescriptorHeap,
     ) -> Result<Resources> {
-
         create_samplers(device, sampler_descriptor_heap);
 
         let file = File::open(DATA_FILE_NAME).expect("open data file");
 
+        let textures = load_textures(device, command_queue, descriptor_heap, &file)?;
+        let geometry_buffer = load_geometry(device, command_queue, &file)?;
+        let geometry_va = unsafe { geometry_buffer.GetGPUVirtualAddress() };
+
         Ok(Resources {
-            textures: load_textures(device, command_queue, descriptor_heap, &file)?,
+            textures,
+            geometry_buffer,
+            vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW {
+                BufferLocation: geometry_va,
+                SizeInBytes: VERTEX_DATA_SIZE as u32,
+                StrideInBytes: STANDARD_VERTEX_STRIDE,
+            },
+            index_buffer_view: D3D12_INDEX_BUFFER_VIEW {
+                BufferLocation: geometry_va + VERTEX_DATA_SIZE as u64,
+                SizeInBytes: INDEX_DATA_SIZE as u32,
+                Format: STANDARD_INDEX_FORMAT,
+            },
         })
     }
 }
@@ -236,6 +253,65 @@ fn load_textures(
     command_queue.execute_command_lists(&[cl]);
     command_queue.signal_and_wait_for_gpu()?;
     Ok(resources)
+}
+
+fn load_geometry(
+    device: &ID3D12Device,
+    command_queue: &mut SynchronizedCommandQueue,
+    file: &File,
+) -> Result<ID3D12Resource> {
+    let buffer_size = VERTEX_DATA_SIZE + INDEX_DATA_SIZE;
+
+    let upload_buffer: ID3D12Resource = unsafe {
+        device.CreateCommittedResource(
+            &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
+            D3D12_HEAP_FLAG_NONE,
+            &D3D12_RESOURCE_DESC::buffer(buffer_size),
+            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            std::ptr::null(),
+        )?
+    };
+
+    // Load all the geometry data from the file
+    let mut ptr: *mut u8 = std::ptr::null_mut();
+    unsafe {
+        upload_buffer
+            .Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))
+            .ok()?;
+
+        std::assert_eq!(VERTEX_DATA_OFFSET + VERTEX_DATA_SIZE, INDEX_DATA_OFFSET);
+        file.seek_read(
+            std::slice::from_raw_parts_mut(ptr, buffer_size),
+            VERTEX_DATA_OFFSET as u64,
+        ).expect("read geometry data");
+
+        upload_buffer.Unmap(0, std::ptr::null());
+    }
+
+    // Copy this to VRAM
+    let geometry_buffer: ID3D12Resource = unsafe {
+        device.CreateCommittedResource(
+            &HeapProperties::default(),
+            D3D12_HEAP_FLAG_NONE,
+            &D3D12_RESOURCE_DESC::buffer(buffer_size),
+            D3D12_RESOURCE_STATE_COMMON,
+            std::ptr::null(),
+        )?
+    };
+
+    unsafe {
+        let allocator: ID3D12CommandAllocator =
+            device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+        let cl: ID3D12GraphicsCommandList =
+            device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &allocator, None)?;
+
+        cl.CopyResource(&geometry_buffer, &upload_buffer);
+        cl.Close().ok()?;
+
+        command_queue.execute_command_lists(&[cl]);
+        command_queue.signal_and_wait_for_gpu()?;
+    }
+    Ok(geometry_buffer)
 }
 
 macro_rules! input_element_desc {
