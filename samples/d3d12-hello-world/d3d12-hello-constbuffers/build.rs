@@ -1,8 +1,5 @@
-fn main() {
-    println!("!cargo:rerun-if-changed=src/hello-constbuffers-shaders.hlsl");
-    std::fs::copy(
-        "src/hello-constbuffers-shaders.hlsl",
-        std::env::var("OUT_DIR").unwrap() + "/../../../hello-constbuffers-shaders.hlsl",
-    )
-    .expect("Copy");
+use d3dx12::build::*;
+
+fn main() {    
+    copy_data_file("src/hello-constbuffers-shaders.hlsl");
 }

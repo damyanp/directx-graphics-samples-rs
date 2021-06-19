@@ -1,0 +1,20 @@
+[package]
+name = "d3d12-multithreading"
+version = "0.0.0"
+authors = ["Damyan Pepper <damyanp@microsoft.com>"]
+edition = "2018"
+
+[dependencies]
+array-init = "2.0.0"
+async-std = "1.9.0"
+bindings = { path = "../../bindings" }
+cgmath = "0.18.0"
+d3dx12 = { path = "../../d3dx12" }
+dxsample = { path = "../dxsample" }
+futures = { version = "0.3.*", features = ["thread-pool"] }
+static_assertions = "1.1.0"
+windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }
+c_str_macro = "1.0.3"
+
+[build-dependencies]
+windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }

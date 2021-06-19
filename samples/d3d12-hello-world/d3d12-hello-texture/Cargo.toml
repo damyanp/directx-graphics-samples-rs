@@ -6,7 +6,10 @@ edition = "2018"
 
 [dependencies]
 array-init = "2.0.0"
-bindings = { path = "../../../bindings" }
-d3dx12 = { path = "../../../d3dx12" }
-dxsample = { path = "../../dxsample" }
-windows = { package = "windows", git = "https://github.com/damyanp/windows-rs" }
+bindings = { path="../../../bindings" }
+d3dx12 = { path="../../../d3dx12" }
+dxsample = { path="../../dxsample" }
+windows = { package="windows", git="https://github.com/damyanp/windows-rs" }
+
+[build-dependencies]
+d3dx12 = { path="../../../d3dx12" }
