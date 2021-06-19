@@ -112,7 +112,7 @@ impl Renderer {
     ) -> Result<Self> {
         let (factory, device) = dxsample::create_device(&command_line)?;
 
-        let command_queue = SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+        let mut command_queue = SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
 
         let swap_chain = create_swap_chain(&factory, &command_queue.queue, hwnd, width, height)?;
         let rtv_descriptor_heap = RtvDescriptorHeap::new(&device, FRAME_COUNT)?;
@@ -145,7 +145,7 @@ impl Renderer {
             }
         }
 
-        let resources = Resources::new(&device, &gpu_descriptor_heap)?;
+        let resources = Resources::new(&device, &mut command_queue, &gpu_descriptor_heap.slice(2))?;
 
         let frames = Frames::new(
             &device,

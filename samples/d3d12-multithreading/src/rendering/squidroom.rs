@@ -1,14 +1,15 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use std::fs::File;
-
 use array_init::{array_init, try_array_init};
 use bindings::Windows::Win32::{
     Foundation::PSTR,
     Graphics::{Direct3D12::*, Dxgi::*},
 };
 use d3dx12::*;
+use dxsample::SynchronizedCommandQueue;
+use std::os::windows::prelude::FileExt;
+use std::{fs::File, intrinsics::transmute};
 use windows::*;
 
 const DATA_FILE_NAME: &str = "SquidRoom.bin";
@@ -22,27 +23,35 @@ pub const TEXTURE_COUNT: usize = TEXTURES.len();
 impl Resources {
     pub fn new(
         device: &ID3D12Device,
+        command_queue: &mut SynchronizedCommandQueue,
         descriptor_heap: &CbvSrvUavDescriptorHeap,
     ) -> Result<Resources> {
         let file = File::open(DATA_FILE_NAME).expect("open data file");
 
         Ok(Resources {
-            textures: load_textures(device, descriptor_heap, &file)?,
+            textures: load_textures(device, command_queue, descriptor_heap, &file)?,
         })
     }
 }
 
 fn load_textures(
     device: &ID3D12Device,
+    command_queue: &mut SynchronizedCommandQueue,
     descriptor_heap: &CbvSrvUavDescriptorHeap,
     file: &File,
 ) -> Result<[ID3D12Resource; TEXTURE_COUNT]> {
     let mut upload_buffer_size = 0;
     let data: [_; TEXTURE_COUNT] = array_init(|i| {
+        // make sure we're aligned
+        const ALIGNMENT: u64 = D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT as u64;
+        if upload_buffer_size % ALIGNMENT != 0 {
+            upload_buffer_size = ((upload_buffer_size / ALIGNMENT) + 1) * ALIGNMENT;
+        }
         let texture = &TEXTURES[i];
         let desc = D3D12_RESOURCE_DESC::tex2d(texture.format, texture.width, texture.height);
         let mut layout = D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
         let mut total_bytes = 0;
+        let mut num_rows = 0;
         unsafe {
             device.GetCopyableFootprints(
                 &desc,
@@ -50,13 +59,13 @@ fn load_textures(
                 1,
                 upload_buffer_size,
                 &mut layout,
-                std::ptr::null_mut(),
+                &mut num_rows,
                 std::ptr::null_mut(),
                 &mut total_bytes,
             );
         }
         upload_buffer_size += total_bytes;
-        (texture, desc, layout, total_bytes)
+        (texture, desc, layout, num_rows, total_bytes)
     });
 
     let upload_buffer: ID3D12Resource = unsafe {
@@ -69,23 +78,123 @@ fn load_textures(
         )
     }?;
 
-    // map it, load data to it, copy to textures
+    // Populate the upload buffer with data from the file
+    let mut ptr: *mut u8 = std::ptr::null_mut();
+    unsafe {
+        upload_buffer
+            .Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))
+            .ok()?;
+    }
 
-    Ok(try_array_init(|i| -> Result<ID3D12Resource> {
-        let texture = &TEXTURES[i];
+    for (texture, _, layout, num_rows, total_bytes) in data.iter() {
+        let buf = unsafe {
+            std::slice::from_raw_parts_mut(
+                ptr.offset(layout.Offset as isize),
+                *total_bytes as usize,
+            )
+        };
 
-        let desc = D3D12_RESOURCE_DESC::tex2d(texture.format, texture.width, texture.height);
-        let resource = unsafe {
+        let footprint = &layout.Footprint;
+
+        if texture.pitch == footprint.RowPitch {
+            // If the pitches match we can read it in one go
+            file.seek_read(buf, texture.offset as u64)
+                .expect("seek_read");
+        } else {
+            // The pitches don't match so we need to read a row at a time
+            for i in 0..*num_rows {
+                let row_read_pos = (texture.offset + i * texture.pitch) as u64;
+                let row_write_pos = layout.Offset as isize + (i * footprint.RowPitch) as isize;
+
+                let buf = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.offset(row_write_pos),
+                        texture.pitch as usize,
+                    )
+                };
+
+                let pad_bytes = (footprint.RowPitch - texture.pitch) as usize;
+                let pad = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        ptr.offset(row_write_pos + texture.pitch as isize),
+                        pad_bytes,
+                    )
+                };
+
+                file.seek_read(buf, row_read_pos).expect("seek_read");
+                pad.fill(0);
+            }
+        }
+    }
+
+    unsafe {
+        upload_buffer.Unmap(0, std::ptr::null());
+    }
+
+    let allocator: ID3D12CommandAllocator =
+        unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
+    let cl: ID3D12GraphicsCommandList =
+        unsafe { device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &allocator, None) }?;
+
+    let resources = try_array_init(|i| -> Result<ID3D12Resource> {
+        let (texture, desc, layout, _, _) = &data[i];
+
+        let resource: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &HeapProperties::default(),
                 D3D12_HEAP_FLAG_NONE,
-                &desc,
+                desc,
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 std::ptr::null(),
             )
         }?;
+
+        unsafe {
+            device.CreateShaderResourceView(
+                &resource,
+                &D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
+                    desc.Format,
+                    D3D12_TEX2D_SRV {
+                        MostDetailedMip: 0,
+                        MipLevels: 1,
+                        PlaneSlice: 0,
+                        ResourceMinLODClamp: 0.0,
+                    },
+                ),
+                descriptor_heap.get_cpu_descriptor_handle(i),
+            );
+        }
+
+        unsafe {
+            cl.CopyTextureRegion(
+                &D3D12_TEXTURE_COPY_LOCATION {
+                    pResource: Some(resource.clone()),
+                    Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                        SubresourceIndex: 0,
+                    },
+                },
+                0,
+                0,
+                0,
+                &D3D12_TEXTURE_COPY_LOCATION {
+                    pResource: Some(upload_buffer.clone()),
+                    Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                        PlacedFootprint: *layout,
+                    },
+                },
+                std::ptr::null(),
+            );
+        }
+
         Ok(resource)
-    })?)
+    })?;
+
+    unsafe { cl.Close() }.ok()?;
+    command_queue.execute_command_lists(&[cl]);
+    command_queue.signal_and_wait_for_gpu()?;
+    Ok(resources)
 }
 
 macro_rules! input_element_desc {
