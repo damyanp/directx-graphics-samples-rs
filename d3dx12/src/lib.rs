@@ -7,6 +7,8 @@ pub use descriptor_heaps::*;
 mod pipeline_states;
 pub use pipeline_states::*;
 
+pub mod build;
+
 pub fn transition_barrier(
     resource: &ID3D12Resource,
     state_before: D3D12_RESOURCE_STATES,

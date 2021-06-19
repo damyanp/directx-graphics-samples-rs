@@ -1,8 +1,5 @@
+use d3dx12::build::copy_data_file;
+
 fn main() {
-    println!("!cargo:rerun-if-changed=src/hello-texture-shaders.hlsl");
-    std::fs::copy(
-        "src/hello-texture-shaders.hlsl",
-        std::env::var("OUT_DIR").unwrap() + "/../../../hello-texture-shaders.hlsl",
-    )
-    .expect("Copy");
+    copy_data_file("src/hello-texture-shaders.hlsl");
 }
