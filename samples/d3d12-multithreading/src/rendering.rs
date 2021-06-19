@@ -17,8 +17,11 @@ mod squidroom;
 use squidroom::*;
 
 const FRAME_COUNT: usize = 2;
+const NULL_DESCRIPTOR_COUNT: usize = 2;
+const TEXTURE_DESCRIPTOR_COUNT: usize = TEXTURES.len();
 const PER_FRAME_GPU_DESCRIPTOR_COUNT: usize = 3;
-const GPU_DESCRIPTOR_COUNT: usize = FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
+const GPU_DESCRIPTOR_COUNT: usize =
+    NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT + FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
 
 pub struct Renderer {
     _device: ID3D12Device,
@@ -113,13 +116,34 @@ impl Renderer {
 
         let swap_chain = create_swap_chain(&factory, &command_queue.queue, hwnd, width, height)?;
         let rtv_descriptor_heap = RtvDescriptorHeap::new(&device, FRAME_COUNT)?;
-        let dsv_descriptor_heap = DsvDescriptorHeap::new(&device, FRAME_COUNT)?;
+        let dsv_descriptor_heap = DsvDescriptorHeap::new(&device, FRAME_COUNT + 1)?;
         let gpu_descriptor_heap = CbvSrvUavDescriptorHeap::new(
             &device,
             GPU_DESCRIPTOR_COUNT,
             D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         )?;
 
+        // Describe and create 2 null SRVs. Null descriptors are needed in order
+        // to achieve the effect of an "unbound" resource.
+        let null_srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            D3D12_TEX2D_SRV {
+                MostDetailedMip: 0,
+                MipLevels: 1,
+                ..Default::default()
+            },
+        );
+
+        unsafe {
+            for index in 0..1 {
+                gpu_descriptor_heap.create_shader_resource_view(
+                    &device,
+                    None,
+                    Some(&null_srv_desc),
+                    index,
+                );
+            }
+        }
         let frames = Frames::new(
             &device,
             swap_chain,
@@ -305,7 +329,7 @@ impl Frames {
                     device,
                     unsafe { swap_chain.GetBuffer(i as u32)? },
                     rtv_descriptor_heap.get_cpu_descriptor_handle(i),
-                    dsv_descriptor_heap.get_cpu_descriptor_handle(i),
+                    dsv_descriptor_heap.get_cpu_descriptor_handle(i + 1),
                     &gpu_descriptor_heap.slice(i * PER_FRAME_GPU_DESCRIPTOR_COUNT),
                 )?),
             })

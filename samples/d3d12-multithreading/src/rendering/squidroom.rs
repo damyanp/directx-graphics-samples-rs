@@ -102,12 +102,12 @@ macro_rules! draws_array {
     }
 }
 
-const VERTEX_DATA_OFFSET: usize = 30277640;
-const VERTEX_DATA_SIZE: usize = 9685808;
-const INDEX_DATA_OFFSET: usize = 39963448;
-const INDEX_DATA_SIZE: usize = 3056844;
+pub const VERTEX_DATA_OFFSET: usize = 30277640;
+pub const VERTEX_DATA_SIZE: usize = 9685808;
+pub const INDEX_DATA_OFFSET: usize = 39963448;
+pub const INDEX_DATA_SIZE: usize = 3056844;
 
-const TEXTURES: [TextureResource; 74] = textures_array! {
+pub const TEXTURES: [TextureResource; 74] = textures_array! {
     {   512,   512,   1,       DXGI_FORMAT_BC1_UNORM, { { 0, 131072, 1024 }, } }, // squard room platform_3_diff_512.dds
     {   512,   512,   1,       DXGI_FORMAT_BC1_UNORM, { { 131072, 131072, 1024 }, } }, // squard room platform_3_norm_512.dds
     {  1024,  1024,   1,       DXGI_FORMAT_BC1_UNORM, { { 262144, 524288, 2048 }, } }, // squard room platform_2_diff_1024.dds
@@ -184,7 +184,7 @@ const TEXTURES: [TextureResource; 74] = textures_array! {
     {  1024,  1024,   1,       DXGI_FORMAT_BC1_UNORM, { { 29753352, 524288, 2048 }, } },// Golfclub_nm_1024.dds
 };
 
-const DRAWS : [DrawParameters; 1025] = draws_array!
+pub const DRAWS : [DrawParameters; 1025] = draws_array!
     {
         {   0,   1,  -1,        0,    15198,        0 }, // subset0_squard_room_platform_3_dif1
         {   2,   3,  -1,    15198,      438,     6051 }, // subset0_squard_room_platform_2_dif
