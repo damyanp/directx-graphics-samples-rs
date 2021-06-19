@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use bindings::Windows::Win32::Graphics::{Direct3D12::*, Dxgi::*};
 use windows::*;
 
@@ -39,7 +37,7 @@ impl ResourceDesc for D3D12_RESOURCE_DESC {
     fn buffer(size: usize) -> Self {
         D3D12_RESOURCE_DESC {
             Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-            Width: size.try_into().unwrap(),
+            Width: size as u64,
             Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
             ..ResourceDesc::default()
         }

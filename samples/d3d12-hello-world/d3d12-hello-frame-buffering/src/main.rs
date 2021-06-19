@@ -66,7 +66,7 @@ mod d3d12_hello_frame_buffering {
                     ..Default::default()
                 },
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                BufferCount: FRAME_COUNT.try_into().unwrap(),
+                BufferCount: FRAME_COUNT as u32,
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
                 ..Default::default()
             };

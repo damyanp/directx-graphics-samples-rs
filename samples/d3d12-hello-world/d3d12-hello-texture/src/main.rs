@@ -57,7 +57,7 @@ mod d3d12_hello_texture {
             let (width, height) = self.window_size();
 
             let swap_chain_desc = DXGI_SWAP_CHAIN_DESC1 {
-                BufferCount: FRAME_COUNT.try_into().unwrap(),
+                BufferCount: FRAME_COUNT as u32,
                 Width: width as u32,
                 Height: height as u32,
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -239,7 +239,7 @@ mod d3d12_hello_texture {
         unsafe {
             command_list.SetGraphicsRootSignature(&resources.root_signature);
             let mut heaps = [Some(resources.srv_heap.heap.clone())];
-            command_list.SetDescriptorHeaps(heaps.len().try_into().unwrap(), transmute(&mut heaps));
+            command_list.SetDescriptorHeaps(heaps.len() as u32, transmute(&mut heaps));
             command_list
                 .SetGraphicsRootDescriptorTable(0, resources.srv_heap.get_gpu_descriptor_handle(0));
             command_list.RSSetViewports(1, &resources.viewport);
@@ -563,7 +563,7 @@ mod d3d12_hello_texture {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
                 D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC::buffer(upload_buffer_size.try_into().unwrap()),
+                &D3D12_RESOURCE_DESC::buffer(upload_buffer_size as usize),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
                 std::ptr::null_mut(),
             )
@@ -656,7 +656,7 @@ mod d3d12_hello_texture {
                 p = p.offset(1);
             }
 
-            dest = dest.offset(footprint.RowPitch.try_into().unwrap());
+            dest = dest.offset(footprint.RowPitch as isize);
         }
     }
 
