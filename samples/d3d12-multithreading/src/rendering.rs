@@ -29,6 +29,7 @@ pub struct Renderer {
     _rtv_descriptor_heap: RtvDescriptorHeap,
     _dsv_descriptor_heap: DsvDescriptorHeap,
     _gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
+    _sampler_descriptor_heap: SamplerDescriptorHeap,
     frames: Frames,
 }
 
@@ -112,7 +113,8 @@ impl Renderer {
     ) -> Result<Self> {
         let (factory, device) = dxsample::create_device(&command_line)?;
 
-        let mut command_queue = SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+        let mut command_queue =
+            SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
 
         let swap_chain = create_swap_chain(&factory, &command_queue.queue, hwnd, width, height)?;
         let rtv_descriptor_heap = RtvDescriptorHeap::new(&device, FRAME_COUNT)?;
@@ -122,6 +124,8 @@ impl Renderer {
             GPU_DESCRIPTOR_COUNT,
             D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         )?;
+        let sampler_descriptor_heap =
+            SamplerDescriptorHeap::new(&device, 2, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)?;
 
         // Describe and create 2 null SRVs. Null descriptors are needed in order
         // to achieve the effect of an "unbound" resource.
@@ -145,7 +149,12 @@ impl Renderer {
             }
         }
 
-        let resources = Resources::new(&device, &mut command_queue, &gpu_descriptor_heap.slice(2))?;
+        let resources = Resources::new(
+            &device,
+            &mut command_queue,
+            &gpu_descriptor_heap.slice(2),
+            &sampler_descriptor_heap,
+        )?;
 
         let frames = Frames::new(
             &device,
@@ -162,6 +171,7 @@ impl Renderer {
             _rtv_descriptor_heap: rtv_descriptor_heap,
             _dsv_descriptor_heap: dsv_descriptor_heap,
             _gpu_descriptor_heap: gpu_descriptor_heap,
+            _sampler_descriptor_heap: sampler_descriptor_heap,
         })
     }
 

@@ -25,7 +25,44 @@ impl Resources {
         device: &ID3D12Device,
         command_queue: &mut SynchronizedCommandQueue,
         descriptor_heap: &CbvSrvUavDescriptorHeap,
+        sampler_descriptor_heap: &SamplerDescriptorHeap,
     ) -> Result<Resources> {
+        // Create the samplers
+        unsafe {
+            let wrap = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+            let clamp = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+
+            let address_mode = |m| D3D12_SAMPLER_DESC {
+                AddressU: m,
+                AddressV: m,
+                AddressW: m,
+                MaxLOD: D3D12_FLOAT32_MAX,
+                MaxAnisotropy: 1,
+                ComparisonFunc: D3D12_COMPARISON_FUNC_ALWAYS,
+                ..Default::default()
+            };
+
+            // Describe and create the wrapping sampler, which is used for
+            // sampling diffuse/normal maps.
+            device.CreateSampler(
+                &D3D12_SAMPLER_DESC {
+                    Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+                    ..address_mode(D3D12_TEXTURE_ADDRESS_MODE_WRAP)
+                },
+                sampler_descriptor_heap.get_cpu_descriptor_handle(0),
+            );
+
+            // Describe and create the point clamping sampler, which is used for
+            // the shadow map.
+            device.CreateSampler(
+                &D3D12_SAMPLER_DESC {
+                    Filter: D3D12_FILTER_MIN_MAG_MIP_POINT,
+                    ..address_mode(D3D12_TEXTURE_ADDRESS_MODE_CLAMP)
+                },
+                sampler_descriptor_heap.get_cpu_descriptor_handle(1),
+            );
+        }
+
         let file = File::open(DATA_FILE_NAME).expect("open data file");
 
         Ok(Resources {
