@@ -18,7 +18,7 @@ use squidroom::*;
 
 const FRAME_COUNT: usize = 2;
 const NULL_DESCRIPTOR_COUNT: usize = 2;
-const TEXTURE_DESCRIPTOR_COUNT: usize = TEXTURES.len();
+const TEXTURE_DESCRIPTOR_COUNT: usize = squidroom::TEXTURE_COUNT;
 const PER_FRAME_GPU_DESCRIPTOR_COUNT: usize = 3;
 const GPU_DESCRIPTOR_COUNT: usize =
     NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT + FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
@@ -45,11 +45,11 @@ pub struct Frame {
     command_allocators: Vec<ID3D12CommandAllocator>,
     next_command_allocator: usize,
     fence_value: u64,
-    render_data: Arc<RenderData>,
+    render_data: Arc<FrameRenderData>,
 }
 
 #[allow(dead_code)]
-struct RenderData {
+struct FrameRenderData {
     render_target: ID3D12Resource,
     shadow_texture: ID3D12Resource,
     _shadow_cb: ID3D12Resource,
@@ -100,8 +100,8 @@ impl Default for LightState {
     }
 }
 
-unsafe impl Send for RenderData {}
-unsafe impl Sync for RenderData {}
+unsafe impl Send for FrameRenderData {}
+unsafe impl Sync for FrameRenderData {}
 
 impl Renderer {
     pub fn new(
@@ -144,6 +144,9 @@ impl Renderer {
                 );
             }
         }
+
+        let resources = Resources::new(&device, &gpu_descriptor_heap)?;
+
         let frames = Frames::new(
             &device,
             swap_chain,
@@ -325,7 +328,7 @@ impl Frames {
                 command_allocators: Default::default(),
                 next_command_allocator: Default::default(),
                 fence_value: Default::default(),
-                render_data: Arc::new(RenderData::new(
+                render_data: Arc::new(FrameRenderData::new(
                     device,
                     unsafe { swap_chain.GetBuffer(i as u32)? },
                     rtv_descriptor_heap.get_cpu_descriptor_handle(i),
@@ -347,7 +350,10 @@ impl Frames {
         })
     }
 
-    fn start_frame(&mut self, command_queue: &SynchronizedCommandQueue) -> Result<Arc<RenderData>> {
+    fn start_frame(
+        &mut self,
+        command_queue: &SynchronizedCommandQueue,
+    ) -> Result<Arc<FrameRenderData>> {
         let frame = &mut self.frames[self.current_index];
         frame.start(command_queue)?;
         Ok(frame.render_data.clone())
@@ -423,14 +429,14 @@ impl Frame {
     }
 }
 
-impl RenderData {
+impl FrameRenderData {
     fn new(
         device: &ID3D12Device,
         render_target: ID3D12Resource,
         render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
         shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
         gpu_descriptor_heap: &CbvSrvUavDescriptorHeap,
-    ) -> Result<RenderData> {
+    ) -> Result<FrameRenderData> {
         let rt_desc = unsafe { render_target.GetDesc() };
 
         let shadow_texture_desc = D3D12_RESOURCE_DESC {
@@ -533,7 +539,7 @@ impl RenderData {
             );
         }
 
-        Ok(RenderData {
+        Ok(FrameRenderData {
             render_target,
             shadow_texture,
             _shadow_cb: shadow_cb,

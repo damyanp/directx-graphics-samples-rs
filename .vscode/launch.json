@@ -50,7 +50,7 @@
             "name": "Debug executable 'd3d12-multithreading'",
             "program": "${workspaceFolder}/target/debug/d3d12-multithreading.exe",
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}/target/debug"
         },
     ]
 }
