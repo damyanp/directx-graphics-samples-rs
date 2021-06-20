@@ -112,8 +112,8 @@ impl DXSample for MultithreadingApp {
 
                 *light = LightState {
                     position,
-                    _view: view,
-                    _projection: projection,
+                    view,
+                    projection,
                     ..*light
                 };
 

@@ -1,7 +1,9 @@
+#![allow(dead_code, unused_variables)]
+
 use array_init::try_array_init;
 use async_std::task;
 use bindings::Windows::Win32::{
-    Foundation::HWND,
+    Foundation::{HWND, RECT},
     Graphics::{Direct3D12::*, Dxgi::*},
 };
 use cgmath::{point3, vec3, vec4, Matrix4, Point3, SquareMatrix, Vector3, Vector4};
@@ -24,12 +26,13 @@ const GPU_DESCRIPTOR_COUNT: usize =
     NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT + FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
 
 pub struct Renderer {
-    _device: ID3D12Device,
+    device: ID3D12Device,
+    viewport: D3D12_VIEWPORT,
+    scissor_rect: RECT,
     command_queue: SynchronizedCommandQueue,
-    _rtv_descriptor_heap: RtvDescriptorHeap,
-    _dsv_descriptor_heap: DsvDescriptorHeap,
-    _gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
-    _sampler_descriptor_heap: SamplerDescriptorHeap,
+    rtv_descriptor_heap: RtvDescriptorHeap,
+    dsv_descriptor_heap: DsvDescriptorHeap,
+    gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
     frames: Frames,
 }
 
@@ -51,14 +54,18 @@ pub struct Frame {
 
 #[allow(dead_code)]
 struct FrameRenderData {
+    resources: Arc<Resources>,
     render_target: ID3D12Resource,
     shadow_texture: ID3D12Resource,
-    _shadow_cb: ID3D12Resource,
-    _scene_cb: ID3D12Resource,
+    shadow_cb: ID3D12Resource,
+    scene_cb: ID3D12Resource,
     shadow_cb_ptr: *mut SceneConstantBuffer,
     scene_cb_ptr: *mut SceneConstantBuffer,
     render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
     shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+    shadow_cbv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
+    scene_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
+    scene_cbv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
 }
 
 #[repr(C, align(256))]
@@ -82,10 +89,10 @@ const_assert_eq!(
 pub struct LightState {
     pub position: Point3<f32>,
     pub direction: Vector3<f32>,
-    pub _color: Vector4<f32>,
-    pub _falloff: Vector4<f32>,
-    pub _view: Matrix4<f32>,
-    pub _projection: Matrix4<f32>,
+    pub color: Vector4<f32>,
+    pub falloff: Vector4<f32>,
+    pub view: Matrix4<f32>,
+    pub projection: Matrix4<f32>,
 }
 
 impl Default for LightState {
@@ -93,10 +100,10 @@ impl Default for LightState {
         LightState {
             position: point3(0.0, 15.0, -30.0),
             direction: vec3(0.0, 0.0, 1.0),
-            _color: vec4(0.7, 0.7, 0.7, 1.0),
-            _falloff: vec4(800.0, 1.0, 0.0, 1.0),
-            _view: Matrix4::identity(),
-            _projection: Matrix4::identity(),
+            color: vec4(0.7, 0.7, 0.7, 1.0),
+            falloff: vec4(800.0, 1.0, 0.0, 1.0),
+            view: Matrix4::identity(),
+            projection: Matrix4::identity(),
         }
     }
 }
@@ -111,6 +118,22 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<Self> {
+        let viewport = D3D12_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: width as f32,
+            Height: height as f32,
+            MinDepth: D3D12_MIN_DEPTH,
+            MaxDepth: D3D12_MAX_DEPTH,
+        };
+
+        let scissor_rect = RECT {
+            left: 0,
+            top: 0,
+            right: width as i32,
+            bottom: height as i32,
+        };
+
         let (factory, device) = dxsample::create_device(&command_line)?;
 
         let mut command_queue =
@@ -124,8 +147,6 @@ impl Renderer {
             GPU_DESCRIPTOR_COUNT,
             D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         )?;
-        let sampler_descriptor_heap =
-            SamplerDescriptorHeap::new(&device, 2, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)?;
 
         // Describe and create 2 null SRVs. Null descriptors are needed in order
         // to achieve the effect of an "unbound" resource.
@@ -149,12 +170,14 @@ impl Renderer {
             }
         }
 
-        let resources = Resources::new(
+        let null_srv_table = gpu_descriptor_heap.get_gpu_descriptor_handle(0);
+
+        let resources = Arc::new(Resources::new(
             &device,
             &mut command_queue,
-            &gpu_descriptor_heap.slice(2),
-            &sampler_descriptor_heap,
-        )?;
+            gpu_descriptor_heap.slice(2),
+            null_srv_table,
+        )?);
 
         let frames = Frames::new(
             &device,
@@ -162,20 +185,22 @@ impl Renderer {
             &rtv_descriptor_heap,
             &dsv_descriptor_heap,
             &gpu_descriptor_heap.slice(0), // TODO: leave room for textures
+            resources.clone(),
         )?;
 
         Ok(Renderer {
-            _device: device,
+            device,
+            viewport,
+            scissor_rect,
             command_queue,
+            rtv_descriptor_heap,
+            dsv_descriptor_heap,
+            gpu_descriptor_heap,
             frames,
-            _rtv_descriptor_heap: rtv_descriptor_heap,
-            _dsv_descriptor_heap: dsv_descriptor_heap,
-            _gpu_descriptor_heap: gpu_descriptor_heap,
-            _sampler_descriptor_heap: sampler_descriptor_heap,
         })
     }
 
-    pub fn render(&mut self, _state: &State) -> Result<()> {
+    pub fn render(&mut self, state: &State) -> Result<()> {
         let render_data = self.frames.start_frame(&self.command_queue)?;
 
         macro_rules! spawn_async_render_task {
@@ -232,6 +257,20 @@ impl Renderer {
             }
         });
 
+        let shadow_map_render: [_; 4] = try_array_init(|_| -> Result<_> {
+            let viewport = self.viewport;
+            let scissor_rect = self.scissor_rect;
+            let task = spawn_async_render_task!(cl, render_data, {
+                render_data
+                    .resources
+                    .set_common_pipeline_state(&cl, viewport, scissor_rect);
+                render_data.set_shadow_pass_state(&cl);
+
+                unsafe { cl.Close().ok()? }
+            });
+            Ok(task)
+        })?;
+
         let mid_render = spawn_async_render_task!(cl, render_data, {
             unsafe {
                 cl.ResourceBarrier(
@@ -274,6 +313,9 @@ impl Renderer {
 
         task::block_on(async {
             self.frames.command_lists.push(pre_render.await?);
+            for r in shadow_map_render {
+                self.frames.command_lists.push(r.await?);
+            }
             self.frames.command_lists.push(mid_render.await?);
             self.frames.command_lists.push(post_render.await?);
             Ok::<(), Error>(()) // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
@@ -332,6 +374,7 @@ impl Frames {
         rtv_descriptor_heap: &RtvDescriptorHeap,
         dsv_descriptor_heap: &DsvDescriptorHeap,
         gpu_descriptor_heap: &CbvSrvUavDescriptorHeap,
+        resources: Arc<Resources>,
     ) -> Result<Frames> {
         let frames = try_array_init(|i| -> Result<Frame> {
             Ok(Frame {
@@ -340,6 +383,7 @@ impl Frames {
                 fence_value: Default::default(),
                 render_data: Arc::new(FrameRenderData::new(
                     device,
+                    resources.clone(),
                     unsafe { swap_chain.GetBuffer(i as u32)? },
                     rtv_descriptor_heap.get_cpu_descriptor_handle(i),
                     dsv_descriptor_heap.get_cpu_descriptor_handle(i + 1),
@@ -442,6 +486,7 @@ impl Frame {
 impl FrameRenderData {
     fn new(
         device: &ID3D12Device,
+        resources: Arc<Resources>,
         render_target: ID3D12Resource,
         render_target_view: D3D12_CPU_DESCRIPTOR_HANDLE,
         shadow_depth_view: D3D12_CPU_DESCRIPTOR_HANDLE,
@@ -550,14 +595,45 @@ impl FrameRenderData {
         }
 
         Ok(FrameRenderData {
+            resources,
             render_target,
             shadow_texture,
-            _shadow_cb: shadow_cb,
-            _scene_cb: scene_cb,
+            shadow_cb,
+            scene_cb,
             shadow_cb_ptr,
             scene_cb_ptr,
             render_target_view,
             shadow_depth_view,
+            shadow_cbv_table: shadow_cbv_descriptor_handles.gpu,
+            scene_srv_table: shadow_srv_descriptor_handles.gpu,
+            scene_cbv_table: scene_cbv_descriptor_handles.gpu
         })
+    }
+
+    fn set_shadow_pass_state(&self, cl: &ID3D12GraphicsCommandList) {
+        unsafe {
+            cl.SetGraphicsRootDescriptorTable(2, self.resources.null_srv_table);
+            cl.SetGraphicsRootDescriptorTable(1, self.shadow_cbv_table);
+
+            cl.OMSetRenderTargets(
+                0,
+                std::ptr::null_mut(),
+                false,
+                &self.shadow_depth_view,
+            );
+        }
+    }
+
+    fn set_scene_pass_state(&self, cl: &ID3D12GraphicsCommandList) {
+        unsafe {
+            cl.SetGraphicsRootDescriptorTable(2, self.scene_srv_table);
+            cl.SetGraphicsRootDescriptorTable(1, self.scene_cbv_table);
+
+            cl.OMSetRenderTargets(
+                1,
+                &self.render_target_view,
+                false,
+                &self.shadow_depth_view);
+        }
     }
 }

@@ -3,9 +3,9 @@
 
 use array_init::{array_init, try_array_init};
 use bindings::Windows::Win32::{
-    Foundation::PSTR,
+    Foundation::{PSTR, RECT},
     Graphics::{
-        Direct3D11::ID3DBlob,
+        Direct3D11::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
         Direct3D12::*,
         Dxgi::*,
         Hlsl::{
@@ -28,6 +28,9 @@ pub struct Resources {
     vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW,
     index_buffer_view: D3D12_INDEX_BUFFER_VIEW,
     root_signature: ID3D12RootSignature,
+    descriptor_heaps: [Option<ID3D12DescriptorHeap>; 2],
+    sampler_descriptor_table: D3D12_GPU_DESCRIPTOR_HANDLE,
+    pub null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
 }
 
 pub const TEXTURE_COUNT: usize = TEXTURES.len();
@@ -36,14 +39,15 @@ impl Resources {
     pub fn new(
         device: &ID3D12Device,
         command_queue: &mut SynchronizedCommandQueue,
-        descriptor_heap: &CbvSrvUavDescriptorHeap,
-        sampler_descriptor_heap: &SamplerDescriptorHeap,
+        descriptor_heap: CbvSrvUavDescriptorHeap,
+        null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
     ) -> Result<Resources> {
-        create_samplers(device, sampler_descriptor_heap);
+        let sampler_descriptor_heap = create_samplers(device)?;
+        let sampler_descriptor_table = sampler_descriptor_heap.start_gpu_handle();
 
         let file = File::open(DATA_FILE_NAME).expect("open data file");
 
-        let textures = load_textures(device, command_queue, descriptor_heap, &file)?;
+        let textures = load_textures(device, command_queue, &descriptor_heap, &file)?;
         let geometry_buffer = load_geometry(device, command_queue, &file)?;
         let geometry_va = unsafe { geometry_buffer.GetGPUVirtualAddress() };
 
@@ -64,12 +68,56 @@ impl Resources {
                 Format: STANDARD_INDEX_FORMAT,
             },
             root_signature,
+            descriptor_heaps: [
+                Some(descriptor_heap.heap),
+                Some(sampler_descriptor_heap.heap),
+            ],
+            sampler_descriptor_table,
+            null_srv_table,
         })
+    }
+
+    pub fn set_common_pipeline_state(
+        &self,
+        cl: &ID3D12GraphicsCommandList,
+        viewport: D3D12_VIEWPORT,
+        scissor_rect: RECT, // TODO: where is D3D12_RECT?
+    ) {
+        unsafe {
+            cl.SetGraphicsRootSignature(&self.root_signature);
+
+            cl.SetDescriptorHeaps(
+                self.descriptor_heaps.len() as u32,
+                // TODO: transmute required here because ppDescriptorheaps takes
+                // a *mut, even though it really won't modify them
+                // TODO: file a bug on this
+                transmute(self.descriptor_heaps.as_ptr()),
+            );
+
+            cl.RSSetViewports(1, &viewport);
+            cl.RSSetScissorRects(1, &scissor_rect);
+            cl.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cl.IASetVertexBuffers(0, 1, &self.vertex_buffer_view);
+            cl.IASetIndexBuffer(&self.index_buffer_view);
+            cl.SetGraphicsRootDescriptorTable(3, self.sampler_descriptor_table);
+
+            // Render targets and depth stencil are set elsewhere because the
+            // depth stencil depends on the frame resource being used.
+
+            // Constant buffers are set elsewhere because they depend on the
+            // frame resource being used.
+
+            // SRVs are set elsewhere because they change based on the object
+            // being drawn.
+        }
     }
 }
 
-fn create_samplers(device: &ID3D12Device, sampler_descriptor_heap: &SamplerDescriptorHeap) {
+fn create_samplers(device: &ID3D12Device) -> Result<SamplerDescriptorHeap> {
     unsafe {
+        let sampler_descriptor_heap =
+            SamplerDescriptorHeap::new(&device, 2, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)?;
+
         let wrap = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
         let clamp = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 
@@ -102,6 +150,8 @@ fn create_samplers(device: &ID3D12Device, sampler_descriptor_heap: &SamplerDescr
             },
             sampler_descriptor_heap.get_cpu_descriptor_handle(1),
         );
+
+        Ok(sampler_descriptor_heap)
     }
 }
 
