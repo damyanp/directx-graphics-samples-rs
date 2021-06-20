@@ -262,6 +262,20 @@ fn load_textures(
         Ok(resource)
     })?;
 
+    unsafe {
+        let barriers: [D3D12_RESOURCE_BARRIER; TEXTURE_COUNT] =
+            array_init::from_iter(resources.iter().map(|r| {
+                transition_barrier(
+                    r,
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                )
+            }))
+            .expect("made barriers");
+
+        cl.ResourceBarrier(barriers.len() as u32, barriers.as_ptr());
+    }
+
     unsafe { cl.Close() }.ok()?;
     command_queue.execute_command_lists(&[cl]);
     command_queue.signal_and_wait_for_gpu()?;
