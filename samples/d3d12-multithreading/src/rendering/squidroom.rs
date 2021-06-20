@@ -4,7 +4,15 @@
 use array_init::{array_init, try_array_init};
 use bindings::Windows::Win32::{
     Foundation::PSTR,
-    Graphics::{Direct3D11::ID3DBlob, Direct3D12::*, Dxgi::*},
+    Graphics::{
+        Direct3D11::ID3DBlob,
+        Direct3D12::*,
+        Dxgi::*,
+        Hlsl::{
+            D3DCompileFromFile, D3DCOMPILE_DEBUG, D3DCOMPILE_OPTIMIZATION_LEVEL3,
+            D3DCOMPILE_SKIP_OPTIMIZATION,
+        },
+    },
 };
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
@@ -40,6 +48,7 @@ impl Resources {
         let geometry_va = unsafe { geometry_buffer.GetGPUVirtualAddress() };
 
         let root_signature = create_root_signature(device)?;
+        let (pso, shadow_map_pso) = create_pipeline_states(device, &root_signature)?;
 
         Ok(Resources {
             textures,
@@ -402,21 +411,127 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error).ok()?;
 
         let signature = signature.expect("root signature");
-        let root_signature = device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())?;
+        let root_signature = device.CreateRootSignature(
+            0,
+            signature.GetBufferPointer(),
+            signature.GetBufferSize(),
+        )?;
         Ok(root_signature)
     }
+}
 
+fn create_pipeline_states(
+    device: &ID3D12Device,
+    root_signature: &ID3D12RootSignature,
+) -> Result<(ID3D12PipelineState, ID3D12PipelineState)> {
+    let compile_flags;
+    if cfg!(debug_assertions) {
+        // Enable better shader debugging with the graphics debugging tools.
+        compile_flags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+    } else {
+        compile_flags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    }
 
-    /*
-            CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
-            rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
+    let shaders_hlsl_path = asset_path.join("multithreading-shaders.hlsl");
+    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
-            ComPtr<ID3DBlob> signature;
-            ComPtr<ID3DBlob> error;
-            ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
-            ThrowIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
-            NAME_D3D12_OBJECT(m_rootSignature);
-    */
+    let mut vertex_shader = None;
+    let vertex_shader = unsafe {
+        D3DCompileFromFile(
+            shaders_hlsl,
+            std::ptr::null_mut(),
+            None,
+            "VSMain",
+            "vs_5_0",
+            compile_flags,
+            0,
+            &mut vertex_shader,
+            std::ptr::null_mut(),
+        )
+    }
+    .and_some(vertex_shader)?;
+
+    let mut pixel_shader = None;
+    let pixel_shader = unsafe {
+        D3DCompileFromFile(
+            shaders_hlsl,
+            std::ptr::null_mut(),
+            None,
+            "PSMain",
+            "ps_5_0",
+            compile_flags,
+            0,
+            &mut pixel_shader,
+            std::ptr::null_mut(),
+        )
+    }
+    .and_some(pixel_shader)?;
+
+    let default_stencil_op = D3D12_DEPTH_STENCILOP_DESC {
+        StencilFailOp: D3D12_STENCIL_OP_KEEP,
+        StencilDepthFailOp: D3D12_STENCIL_OP_KEEP,
+        StencilPassOp: D3D12_STENCIL_OP_KEEP,
+        StencilFunc: D3D12_COMPARISON_FUNC_ALWAYS,
+    };
+
+    // This warning is triggered by calling .as_mut_ptr() on
+    // STANDARD_VERTEX_DESCRIPTION. TODO: ideally we can annotate these struct
+    // fields as const.
+    #[allow(const_item_mutation)]
+    let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
+        pRootSignature: Some(root_signature.clone()),
+        VS: D3D12_SHADER_BYTECODE::from_blob(&vertex_shader),
+        PS: D3D12_SHADER_BYTECODE::from_blob(&pixel_shader),
+        BlendState: D3D12_BLEND_DESC::reasonable_default(),
+        SampleMask: u32::max_value(),
+        RasterizerState: D3D12_RASTERIZER_DESC::reasonable_default(),
+        DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
+            DepthEnable: true.into(),
+            DepthWriteMask: D3D12_DEPTH_WRITE_MASK_ALL,
+            DepthFunc: D3D12_COMPARISON_FUNC_LESS_EQUAL,
+            StencilEnable: false.into(),
+            StencilReadMask: D3D12_DEFAULT_STENCIL_READ_MASK as u8,
+            StencilWriteMask: D3D12_DEFAULT_STENCIL_WRITE_MASK as u8,
+            FrontFace: default_stencil_op,
+            BackFace: default_stencil_op,
+        },
+        InputLayout: D3D12_INPUT_LAYOUT_DESC {
+            pInputElementDescs: STANDARD_VERTEX_DESCRIPTION.as_mut_ptr(),
+            NumElements: STANDARD_VERTEX_DESCRIPTION.len() as u32,
+        },
+        PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        NumRenderTargets: 1,
+        RTVFormats: array_init(|i| {
+            if i == 0 {
+                DXGI_FORMAT_R8G8B8A8_UNORM
+            } else {
+                DXGI_FORMAT_UNKNOWN
+            }
+        }),
+        DSVFormat: DXGI_FORMAT_D32_FLOAT,
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
+        ..Default::default()
+    };
+
+    let pso = unsafe { device.CreateGraphicsPipelineState(&pso_desc) }?;
+
+    // Alter the description and create the PSO for rendering the shadow map.
+    // The shadow map does not use a pixel shader or render targets.
+    let pso_shadow_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
+        PS: Default::default(),
+        NumRenderTargets: 0,
+        RTVFormats: [DXGI_FORMAT_UNKNOWN; 8],
+        ..pso_desc
+    };
+
+    let pso_shadow = unsafe { device.CreateGraphicsPipelineState(&pso_shadow_desc) }?;
+
+    Ok((pso, pso_shadow))
 }
 
 macro_rules! input_element_desc {
