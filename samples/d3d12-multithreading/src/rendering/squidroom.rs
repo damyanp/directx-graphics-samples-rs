@@ -4,7 +4,7 @@
 use array_init::{array_init, try_array_init};
 use bindings::Windows::Win32::{
     Foundation::PSTR,
-    Graphics::{Direct3D12::*, Dxgi::*},
+    Graphics::{Direct3D11::ID3DBlob, Direct3D12::*, Dxgi::*},
 };
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
@@ -19,6 +19,7 @@ pub struct Resources {
     geometry_buffer: ID3D12Resource,
     vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW,
     index_buffer_view: D3D12_INDEX_BUFFER_VIEW,
+    root_signature: ID3D12RootSignature,
 }
 
 pub const TEXTURE_COUNT: usize = TEXTURES.len();
@@ -38,6 +39,8 @@ impl Resources {
         let geometry_buffer = load_geometry(device, command_queue, &file)?;
         let geometry_va = unsafe { geometry_buffer.GetGPUVirtualAddress() };
 
+        let root_signature = create_root_signature(device)?;
+
         Ok(Resources {
             textures,
             geometry_buffer,
@@ -51,6 +54,7 @@ impl Resources {
                 SizeInBytes: INDEX_DATA_SIZE as u32,
                 Format: STANDARD_INDEX_FORMAT,
             },
+            root_signature,
         })
     }
 }
@@ -283,7 +287,8 @@ fn load_geometry(
         file.seek_read(
             std::slice::from_raw_parts_mut(ptr, buffer_size),
             VERTEX_DATA_OFFSET as u64,
-        ).expect("read geometry data");
+        )
+        .expect("read geometry data");
 
         upload_buffer.Unmap(0, std::ptr::null());
     }
@@ -312,6 +317,106 @@ fn load_geometry(
         command_queue.signal_and_wait_for_gpu()?;
     }
     Ok(geometry_buffer)
+}
+
+fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
+    let ranges = [
+        // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
+        D3D12_DESCRIPTOR_RANGE1 {
+            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+            NumDescriptors: 2,
+            BaseShaderRegister: 1,
+            RegisterSpace: 0,
+            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+        },
+        // 1 frequently changed constant buffer.
+        D3D12_DESCRIPTOR_RANGE1 {
+            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+            NumDescriptors: 1,
+            BaseShaderRegister: 0,
+            RegisterSpace: 0,
+            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+        },
+        // 1 infrequently changed shadow texture - starting in register t0.
+        D3D12_DESCRIPTOR_RANGE1 {
+            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+            NumDescriptors: 1,
+            BaseShaderRegister: 0,
+            RegisterSpace: 0,
+            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+        },
+        // 2 static samplers.
+        D3D12_DESCRIPTOR_RANGE1 {
+            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+            NumDescriptors: 2,
+            BaseShaderRegister: 0,
+            RegisterSpace: 0,
+            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+        },
+    ];
+
+    fn descriptor_table(
+        ranges: &mut [D3D12_DESCRIPTOR_RANGE1],
+        visibility: D3D12_SHADER_VISIBILITY,
+    ) -> D3D12_ROOT_PARAMETER1 {
+        D3D12_ROOT_PARAMETER1 {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+            ShaderVisibility: visibility,
+            Anonymous: D3D12_ROOT_PARAMETER1_0 {
+                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE1 {
+                    NumDescriptorRanges: ranges.len() as u32,
+                    pDescriptorRanges: ranges.as_mut_ptr(),
+                },
+            },
+        }
+    }
+
+    let mut root_parameters = [
+        descriptor_table(&mut [ranges[0]], D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(&mut [ranges[1]], D3D12_SHADER_VISIBILITY_ALL),
+        descriptor_table(&mut [ranges[2]], D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(&mut [ranges[3]], D3D12_SHADER_VISIBILITY_PIXEL),
+    ];
+
+    let desc = D3D12_VERSIONED_ROOT_SIGNATURE_DESC {
+        Version: D3D_ROOT_SIGNATURE_VERSION_1_1,
+        Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
+            Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
+                NumParameters: root_parameters.len() as u32,
+                pParameters: root_parameters.as_mut_ptr(),
+                NumStaticSamplers: 0,
+                pStaticSamplers: std::ptr::null_mut(),
+                Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+            },
+        },
+    };
+
+    let mut signature: Option<ID3DBlob> = None;
+    let mut error: Option<ID3DBlob> = None;
+
+    unsafe {
+        D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error).ok()?;
+
+        let signature = signature.expect("root signature");
+        let root_signature = device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())?;
+        Ok(root_signature)
+    }
+
+
+    /*
+            CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
+            rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+            ComPtr<ID3DBlob> signature;
+            ComPtr<ID3DBlob> error;
+            ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
+            ThrowIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
+            NAME_D3D12_OBJECT(m_rootSignature);
+    */
 }
 
 macro_rules! input_element_desc {
