@@ -28,9 +28,12 @@ pub struct Resources {
     vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW,
     index_buffer_view: D3D12_INDEX_BUFFER_VIEW,
     root_signature: ID3D12RootSignature,
+    gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
     descriptor_heaps: [Option<ID3D12DescriptorHeap>; 2],
     sampler_descriptor_table: D3D12_GPU_DESCRIPTOR_HANDLE,
     pub null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
+    pub scene_pso: ID3D12PipelineState,
+    pub shadow_map_pso: ID3D12PipelineState,
 }
 
 pub const TEXTURE_COUNT: usize = TEXTURES.len();
@@ -39,7 +42,7 @@ impl Resources {
     pub fn new(
         device: &ID3D12Device,
         command_queue: &mut SynchronizedCommandQueue,
-        descriptor_heap: CbvSrvUavDescriptorHeap,
+        gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
         null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
     ) -> Result<Resources> {
         let sampler_descriptor_heap = create_samplers(device)?;
@@ -47,12 +50,12 @@ impl Resources {
 
         let file = File::open(DATA_FILE_NAME).expect("open data file");
 
-        let textures = load_textures(device, command_queue, &descriptor_heap, &file)?;
+        let textures = load_textures(device, command_queue, &gpu_descriptor_heap, &file)?;
         let geometry_buffer = load_geometry(device, command_queue, &file)?;
         let geometry_va = unsafe { geometry_buffer.GetGPUVirtualAddress() };
 
         let root_signature = create_root_signature(device)?;
-        let (pso, shadow_map_pso) = create_pipeline_states(device, &root_signature)?;
+        let (scene_pso, shadow_map_pso) = create_pipeline_states(device, &root_signature)?;
 
         Ok(Resources {
             textures,
@@ -69,11 +72,14 @@ impl Resources {
             },
             root_signature,
             descriptor_heaps: [
-                Some(descriptor_heap.heap),
+                Some(gpu_descriptor_heap.heap.clone()),
                 Some(sampler_descriptor_heap.heap),
             ],
+            gpu_descriptor_heap,
             sampler_descriptor_table,
             null_srv_table,
+            scene_pso,
+            shadow_map_pso,
         })
     }
 
@@ -109,6 +115,37 @@ impl Resources {
 
             // SRVs are set elsewhere because they change based on the object
             // being drawn.
+        }
+    }
+
+    pub fn draw(
+        &self,
+        cl: &ID3D12GraphicsCommandList,
+        task_index: usize,
+        num_tasks: usize,
+        set_srvs: bool,
+    ) {
+        for i in (task_index..DRAWS.len()).step_by(num_tasks) {
+            let params = &DRAWS[i];
+            if set_srvs {
+                unsafe {
+                    cl.SetGraphicsRootDescriptorTable(
+                        0,
+                        self.gpu_descriptor_heap
+                            .get_gpu_descriptor_handle(params.diffuse_texture_index),
+                    );
+                }
+            }
+
+            unsafe {
+                cl.DrawIndexedInstanced(
+                    params.index_count,
+                    1,
+                    params.index_start,
+                    params.vertex_base,
+                    0,
+                );
+            }
         }
     }
 }
@@ -659,12 +696,12 @@ macro_rules! textures_array {
 }
 
 struct DrawParameters {
-    diffuse_texture_index: isize,
+    diffuse_texture_index: usize,
     normal_texture_index: isize,
     specular_texture_index: isize,
-    index_start: usize,
-    index_count: usize,
-    vertex_base: usize,
+    index_start: u32,
+    index_count: u32,
+    vertex_base: i32,
 }
 
 macro_rules! draws_array {

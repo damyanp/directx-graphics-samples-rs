@@ -160,7 +160,7 @@ impl Renderer {
         );
 
         unsafe {
-            for index in 0..1 {
+            for index in 0..2 {
                 gpu_descriptor_heap.create_shader_resource_view(
                     &device,
                     None,
@@ -257,16 +257,25 @@ impl Renderer {
             }
         });
 
-        let shadow_map_render: [_; 4] = try_array_init(|_| -> Result<_> {
+        const NUM_TASKS : usize = 8;
+        let shadow_map_render: [_; NUM_TASKS] = try_array_init(|task_index| -> Result<_> {
             let viewport = self.viewport;
             let scissor_rect = self.scissor_rect;
             let task = spawn_async_render_task!(cl, render_data, {
+                unsafe { cl.SetPipelineState(&render_data.resources.shadow_map_pso); }
                 render_data
                     .resources
                     .set_common_pipeline_state(&cl, viewport, scissor_rect);
                 render_data.set_shadow_pass_state(&cl);
 
-                unsafe { cl.Close().ok()? }
+                unsafe {
+                    // Set null SRVs for the diffuse/normal textures.
+                    cl.SetGraphicsRootDescriptorTable(0, render_data.resources.null_srv_table);
+
+                    render_data.resources.draw(&cl, task_index, NUM_TASKS, false);
+
+                    cl.Close().ok()?
+                }
             });
             Ok(task)
         })?;
@@ -606,7 +615,7 @@ impl FrameRenderData {
             shadow_depth_view,
             shadow_cbv_table: shadow_cbv_descriptor_handles.gpu,
             scene_srv_table: shadow_srv_descriptor_handles.gpu,
-            scene_cbv_table: scene_cbv_descriptor_handles.gpu
+            scene_cbv_table: scene_cbv_descriptor_handles.gpu,
         })
     }
 
@@ -615,12 +624,7 @@ impl FrameRenderData {
             cl.SetGraphicsRootDescriptorTable(2, self.resources.null_srv_table);
             cl.SetGraphicsRootDescriptorTable(1, self.shadow_cbv_table);
 
-            cl.OMSetRenderTargets(
-                0,
-                std::ptr::null_mut(),
-                false,
-                &self.shadow_depth_view,
-            );
+            cl.OMSetRenderTargets(0, std::ptr::null_mut(), false, &self.shadow_depth_view);
         }
     }
 
@@ -629,11 +633,7 @@ impl FrameRenderData {
             cl.SetGraphicsRootDescriptorTable(2, self.scene_srv_table);
             cl.SetGraphicsRootDescriptorTable(1, self.scene_cbv_table);
 
-            cl.OMSetRenderTargets(
-                1,
-                &self.render_target_view,
-                false,
-                &self.shadow_depth_view);
+            cl.OMSetRenderTargets(1, &self.render_target_view, false, &self.shadow_depth_view);
         }
     }
 }
