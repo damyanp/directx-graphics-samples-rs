@@ -184,7 +184,7 @@ impl Renderer {
             swap_chain,
             &rtv_descriptor_heap,
             &dsv_descriptor_heap,
-            &gpu_descriptor_heap.slice(0), // TODO: leave room for textures
+            &gpu_descriptor_heap.slice(NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT),
             resources.clone(),
         )?;
 
@@ -258,7 +258,7 @@ impl Renderer {
         });
 
         const NUM_TASKS : usize = 8;
-        let shadow_map_render: [_; NUM_TASKS] = try_array_init(|task_index| -> Result<_> {
+        let mut shadow_map_render: [_; NUM_TASKS] = try_array_init(|task_index| -> Result<_> {
             let viewport = self.viewport;
             let scissor_rect = self.scissor_rect;
             let task = spawn_async_render_task!(cl, render_data, {
@@ -322,7 +322,7 @@ impl Renderer {
 
         task::block_on(async {
             self.frames.command_lists.push(pre_render.await?);
-            for r in shadow_map_render {
+            for r in shadow_map_render.iter_mut() {
                 self.frames.command_lists.push(r.await?);
             }
             self.frames.command_lists.push(mid_render.await?);

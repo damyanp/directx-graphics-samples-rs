@@ -231,7 +231,7 @@ fn load_textures(
             &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
             D3D12_HEAP_FLAG_NONE,
             &D3D12_RESOURCE_DESC::buffer(upload_buffer_size as usize),
-            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
             std::ptr::null(),
         )
     }?;
@@ -381,7 +381,7 @@ fn load_geometry(
             &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
             D3D12_HEAP_FLAG_NONE,
             &D3D12_RESOURCE_DESC::buffer(buffer_size),
-            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
             std::ptr::null(),
         )?
     };
