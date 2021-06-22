@@ -48,9 +48,9 @@
             "type": "cppvsdbg",
             "request": "launch",
             "name": "Debug executable 'd3d12-multithreading'",
-            "program": "${workspaceFolder}/target/debug/d3d12-multithreading.exe",
+            "program": "${workspaceFolder}/target/release/d3d12-multithreading.exe",
             "args": [],
-            "cwd": "${workspaceFolder}/target/debug"
+            "cwd": "${workspaceFolder}/target/release"
         },
     ]
 }

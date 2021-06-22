@@ -45,7 +45,7 @@ impl Resources {
         null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
         depth_stencil: ID3D12Resource,
         depth_stencil_view: D3D12_CPU_DESCRIPTOR_HANDLE,
-        ) -> Result<Resources> {
+    ) -> Result<Resources> {
         let sampler_descriptor_heap = create_samplers(device)?;
         let sampler_descriptor_table = sampler_descriptor_heap.start_gpu_handle();
 
@@ -80,7 +80,7 @@ impl Resources {
             },
             root_signature,
             gpu_descriptor_heap,
-            descriptor_heaps, 
+            descriptor_heaps,
             sampler_descriptor_table,
             null_srv_table,
             scene_pso,
@@ -432,66 +432,66 @@ fn load_geometry(
 }
 
 fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
-    let ranges = [
-        // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            NumDescriptors: 2,
-            BaseShaderRegister: 1,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-        // 1 frequently changed constant buffer.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
-            NumDescriptors: 1,
-            BaseShaderRegister: 0,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-        // 1 infrequently changed shadow texture - starting in register t0.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            NumDescriptors: 1,
-            BaseShaderRegister: 0,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-        // 2 static samplers.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
-            NumDescriptors: 2,
-            BaseShaderRegister: 0,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-    ];
+    // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
+    let diffuse_normal_srv_range = &mut [D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 2,
+        BaseShaderRegister: 1,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
 
-    fn descriptor_table(
-        ranges: &mut [D3D12_DESCRIPTOR_RANGE1],
-        visibility: D3D12_SHADER_VISIBILITY,
-    ) -> D3D12_ROOT_PARAMETER1 {
-        D3D12_ROOT_PARAMETER1 {
-            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-            ShaderVisibility: visibility,
-            Anonymous: D3D12_ROOT_PARAMETER1_0 {
-                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE1 {
-                    NumDescriptorRanges: ranges.len() as u32,
-                    pDescriptorRanges: ranges.as_mut_ptr(),
+    // 1 frequently changed constant buffer.
+    let cbv_range = &mut [D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+        NumDescriptors: 1,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
+
+    // 1 infrequently changed shadow texture - starting in register t0.
+    let shadow_srv_range = &mut [D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 1,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
+
+    // 2 static samplers.
+    let samplers_range = &mut [D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+        NumDescriptors: 2,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
+
+    macro_rules! descriptor_table {
+        ( $ranges:expr, $visibility:expr ) => {
+            D3D12_ROOT_PARAMETER1 {
+                ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+                ShaderVisibility: $visibility,
+                Anonymous: D3D12_ROOT_PARAMETER1_0 {
+                    DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE1 {
+                        NumDescriptorRanges: $ranges.len() as u32,
+                        pDescriptorRanges: $ranges.as_mut_ptr(),
+                    },
                 },
-            },
+                }
         }
     }
 
-    let mut root_parameters = [
-        descriptor_table(&mut [ranges[0]], D3D12_SHADER_VISIBILITY_PIXEL),
-        descriptor_table(&mut [ranges[1]], D3D12_SHADER_VISIBILITY_ALL),
-        descriptor_table(&mut [ranges[2]], D3D12_SHADER_VISIBILITY_PIXEL),
-        descriptor_table(&mut [ranges[3]], D3D12_SHADER_VISIBILITY_PIXEL),
+    let root_parameters = &mut [
+        descriptor_table!(diffuse_normal_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table!(cbv_range, D3D12_SHADER_VISIBILITY_ALL),
+        descriptor_table!(shadow_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table!(samplers_range, D3D12_SHADER_VISIBILITY_PIXEL),
     ];
 
     let desc = D3D12_VERSIONED_ROOT_SIGNATURE_DESC {
@@ -512,7 +512,6 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
 
     unsafe {
         D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error).ok()?;
-
         let signature = signature.expect("root signature");
         let root_signature = device.CreateRootSignature(
             0,
