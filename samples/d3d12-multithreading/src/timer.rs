@@ -12,28 +12,29 @@
 use std::time::{Duration, Instant};
 
 pub struct Timer {
-    start: Instant,
+    last_time: Instant,
     now: Instant,
 }
 
 impl Default for Timer {
     fn default() -> Self {
         let now = Instant::now();
-        Timer { start: now, now }
+        Timer { last_time: now, now }
     }
 }
 
 impl Timer {
     pub fn tick(&mut self) {
+        self.last_time = self.now;        
         self.now = Instant::now();
     }
 
     pub fn _reset(&mut self) {
         self.tick();
-        self.start = self.now;
+        self.last_time = self.now;
     }
 
     pub fn get_elapsed(&self) -> Duration {
-        self.now - self.start
+        self.now - self.last_time
     }
 }

@@ -67,22 +67,23 @@ impl DXSample for MultithreadingApp {
         self.timer.tick();
 
         let frame_time = self.timer.get_elapsed().as_secs_f32();
-        let frame_change = Deg(2.0 * frame_time);
+        let camera_rotate = Rad(2.0 * frame_time);
+        let light_rotate = Deg(2.0 * frame_time);
 
         let camera = &mut self.state.camera;
         let input = &mut self.input_state;
 
         if input.left_arrow_pressed {
-            camera.rotate_yaw(-frame_change);
+            camera.rotate_yaw(-camera_rotate);
         }
         if input.right_arrow_pressed {
-            camera.rotate_yaw(frame_change);
+            camera.rotate_yaw(camera_rotate);
         }
         if input.up_arrow_pressed {
-            camera.rotate_pitch(frame_change);
+            camera.rotate_pitch(camera_rotate);
         }
         if input.down_arrow_pressed {
-            camera.rotate_pitch(-frame_change);
+            camera.rotate_pitch(-camera_rotate);
         }
 
         if input.animate {
@@ -93,8 +94,8 @@ impl DXSample for MultithreadingApp {
             let lights_and_cameras = lights.zip(cameras);
 
             for (i, (light, camera)) in lights_and_cameras.enumerate() {
-                let direction = frame_change * (-1.0f32).powf(i as f32);
-                let position = Matrix3::from_angle_y(Rad::<f32>{0: direction.0}).transform_point(light.position);
+                let direction = (-1.0f32).powf(i as f32);
+                let position = Matrix3::from_angle_y(Deg(direction)).transform_point(light.position);
 
                 let eye = light.position;
                 let at = point3(0.0, 8.0, 0.0);
