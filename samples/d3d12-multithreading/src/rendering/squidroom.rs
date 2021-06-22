@@ -431,6 +431,13 @@ fn load_geometry(
     Ok(geometry_buffer)
 }
 
+#[repr(C)] // This has the same repr as D3D12_ROOT_PARAMETER1
+struct D3D12_ROOT_PARAMETER1_WRAPPER<'a> {
+    value: D3D12_ROOT_PARAMETER1,       // <-- this does not have a lifetime, but we have safely hidden it
+    lifetime: core::marker::PhantomData<& 'a [D3D12_DESCRIPTOR_RANGE1]> // <-- this pretends to hold the lifetime
+}
+
+
 fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
     let diffuse_normal_srv_range = &mut [D3D12_DESCRIPTOR_RANGE1 {
@@ -472,26 +479,31 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
     }];
 
-    macro_rules! descriptor_table {
-        ( $ranges:expr, $visibility:expr ) => {
-            D3D12_ROOT_PARAMETER1 {
+    fn descriptor_table<'a>(
+        ranges: &'a mut [D3D12_DESCRIPTOR_RANGE1],
+        visibility: D3D12_SHADER_VISIBILITY,
+    ) -> D3D12_ROOT_PARAMETER1_WRAPPER<'a> {
+        D3D12_ROOT_PARAMETER1_WRAPPER {
+            value: D3D12_ROOT_PARAMETER1 {
                 ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-                ShaderVisibility: $visibility,
+                ShaderVisibility: visibility,
                 Anonymous: D3D12_ROOT_PARAMETER1_0 {
                     DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE1 {
-                        NumDescriptorRanges: $ranges.len() as u32,
-                        pDescriptorRanges: $ranges.as_mut_ptr(),
+                        NumDescriptorRanges: ranges.len() as u32,
+                        pDescriptorRanges: ranges.as_mut_ptr(),
                     },
                 },
-                }
+            },
+            lifetime: core::marker::PhantomData,    // make believe
         }
     }
+    
 
     let root_parameters = &mut [
-        descriptor_table!(diffuse_normal_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
-        descriptor_table!(cbv_range, D3D12_SHADER_VISIBILITY_ALL),
-        descriptor_table!(shadow_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
-        descriptor_table!(samplers_range, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(diffuse_normal_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(cbv_range, D3D12_SHADER_VISIBILITY_ALL),
+        descriptor_table(shadow_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(samplers_range, D3D12_SHADER_VISIBILITY_PIXEL),
     ];
 
     let desc = D3D12_VERSIONED_ROOT_SIGNATURE_DESC {
@@ -499,7 +511,7 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
             Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
                 NumParameters: root_parameters.len() as u32,
-                pParameters: root_parameters.as_mut_ptr(),
+                pParameters: unsafe{ transmute(root_parameters) },
                 NumStaticSamplers: 0,
                 pStaticSamplers: std::ptr::null_mut(),
                 Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
