@@ -177,6 +177,15 @@ impl DsvDescriptorHeap {
         )
     }
 
+    pub fn slice(&self, start_index: usize) -> Self {
+        Self::from_fields(
+            self.heap.clone(), // TODO: this clone is icky
+            self.get_cpu_descriptor_handle(start_index),
+            D3D12_GPU_DESCRIPTOR_HANDLE::default(),
+            self.increment(),
+        )
+    }
+
     /// Creates a DSV in this heap.
     ///
     /// # Safety
@@ -359,5 +368,55 @@ impl ConstantBufferViewDesc for D3D12_CONSTANT_BUFFER_VIEW_DESC {
                 SizeInBytes: resource.GetDesc().Width as u32,
             }
         }
+    }
+}
+
+pub struct SamplerDescriptorHeap {
+    pub heap: ID3D12DescriptorHeap,
+    pub start_cpu_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
+    pub start_gpu_handle: D3D12_GPU_DESCRIPTOR_HANDLE,
+    pub increment: usize,
+}
+
+impl DescriptorHeap for SamplerDescriptorHeap {
+    fn from_fields(
+        heap: ID3D12DescriptorHeap,
+        start_cpu_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
+        start_gpu_handle: D3D12_GPU_DESCRIPTOR_HANDLE,
+        increment: usize,
+    ) -> Self {
+        SamplerDescriptorHeap {
+            heap,
+            start_cpu_handle,
+            start_gpu_handle,
+            increment,
+        }
+    }
+
+    fn start_cpu_handle(&self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        self.start_cpu_handle
+    }
+
+    fn start_gpu_handle(&self) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+        self.start_gpu_handle
+    }
+
+    fn increment(&self) -> usize {
+        self.increment
+    }
+}
+
+impl SamplerDescriptorHeap {
+    pub fn new(
+        device: &ID3D12Device,
+        num_descriptors: usize,
+        flags: D3D12_DESCRIPTOR_HEAP_FLAGS,
+    ) -> Result<Self> {
+        DescriptorHeap::create(
+            device,
+            D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+            num_descriptors,
+            flags,
+        )
     }
 }
