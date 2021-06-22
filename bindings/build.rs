@@ -13,6 +13,7 @@ fn main() {
             SetWindowLongA, SetWindowLongPtrA, ShowWindow, TranslateMessage, CREATESTRUCTA,
             CW_USEDEFAULT, IDC_ARROW, MSG, WM_CREATE, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_PAINT,
             WM_QUIT, WNDCLASSEXA, WNDCLASS_STYLES,
+            VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_SPACE
         },
     };
 }

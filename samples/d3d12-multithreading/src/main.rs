@@ -14,6 +14,7 @@ use bindings::Windows::Win32::{
     Graphics::Dxgi::{
         DXGIDeclareAdapterRemovalSupport, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
     },
+    UI::WindowsAndMessaging::*,
 };
 use camera::{Camera, ViewAndProjectionMatrices};
 use cgmath::{point3, vec3, Deg, InnerSpace, Matrix3, Rad, Transform};
@@ -25,8 +26,6 @@ use windows::*;
 mod camera;
 mod rendering;
 mod timer;
-
-const NUM_CAMERAS: usize = 3;
 
 #[derive(Default)]
 struct MultithreadingApp {
@@ -41,8 +40,8 @@ struct MultithreadingApp {
 #[derive(Default)]
 pub struct State {
     camera: Camera,
-    lights: [LightState; NUM_CAMERAS],
-    light_cameras: [Camera; NUM_CAMERAS],
+    lights: [LightState; rendering::NUM_LIGHTS],
+    light_cameras: [Camera; rendering::NUM_LIGHTS],
 }
 
 #[derive(Default)]
@@ -68,7 +67,7 @@ impl DXSample for MultithreadingApp {
         self.timer.tick();
 
         let frame_time = self.timer.get_elapsed().as_secs_f32();
-        let frame_change = Rad(2.0 * frame_time);
+        let frame_change = Deg(2.0 * frame_time);
 
         let camera = &mut self.state.camera;
         let input = &mut self.input_state;
@@ -95,7 +94,7 @@ impl DXSample for MultithreadingApp {
 
             for (i, (light, camera)) in lights_and_cameras.enumerate() {
                 let direction = frame_change * (-1.0f32).powf(i as f32);
-                let position = Matrix3::from_angle_y(direction).transform_point(light.position);
+                let position = Matrix3::from_angle_y(Rad::<f32>{0: direction.0}).transform_point(light.position);
 
                 let eye = light.position;
                 let at = point3(0.0, 8.0, 0.0);
@@ -138,9 +137,27 @@ impl DXSample for MultithreadingApp {
         r.unwrap();
     }
 
-    fn on_key_up(&mut self, _key: u8) {}
+    fn on_key_up(&mut self, key: u8) {
+        // TODO: the VK_* constants should be u8 not u32?
+        match key as u32 {
+            VK_LEFT => self.input_state.left_arrow_pressed = false,
+            VK_RIGHT => self.input_state.right_arrow_pressed = false,
+            VK_UP => self.input_state.up_arrow_pressed = false,
+            VK_DOWN => self.input_state.down_arrow_pressed = false,
+            VK_SPACE => self.input_state.animate = !self.input_state.animate,
+            _ => (),
+        }
+    }
 
-    fn on_key_down(&mut self, _key: u8) {}
+    fn on_key_down(&mut self, key: u8) {
+        match key as u32 {
+            VK_LEFT => self.input_state.left_arrow_pressed = true,
+            VK_RIGHT => self.input_state.right_arrow_pressed = true,
+            VK_UP => self.input_state.up_arrow_pressed = true,
+            VK_DOWN => self.input_state.down_arrow_pressed = true,
+            _ => (),
+        }
+    }
 
     fn title(&self) -> String {
         "D3D12 Multithreading Sample".into()

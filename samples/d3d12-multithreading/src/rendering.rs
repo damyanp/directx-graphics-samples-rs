@@ -1,12 +1,10 @@
-#![allow(dead_code, unused_variables)]
-
 use array_init::try_array_init;
 use async_std::task;
 use bindings::Windows::Win32::{
     Foundation::{HWND, RECT},
     Graphics::{Direct3D12::*, Dxgi::*},
 };
-use cgmath::{point3, vec3, vec4, Matrix4, Point3, SquareMatrix, Vector3, Vector4};
+use cgmath::{Deg, Matrix4, Point3, SquareMatrix, Vector3, Vector4, Zero, point3, vec3, vec4};
 use d3dx12::*;
 use dxsample::*;
 use static_assertions::const_assert_eq;
@@ -26,13 +24,13 @@ const GPU_DESCRIPTOR_COUNT: usize =
     NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT + FRAME_COUNT * PER_FRAME_GPU_DESCRIPTOR_COUNT;
 
 pub struct Renderer {
-    device: ID3D12Device,
+    _device: ID3D12Device,
     viewport: D3D12_VIEWPORT,
     scissor_rect: RECT,
     command_queue: SynchronizedCommandQueue,
-    rtv_descriptor_heap: RtvDescriptorHeap,
-    dsv_descriptor_heap: DsvDescriptorHeap,
-    gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
+    _rtv_descriptor_heap: RtvDescriptorHeap,
+    _dsv_descriptor_heap: DsvDescriptorHeap,
+    _gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
     frames: Frames,
 }
 
@@ -76,7 +74,21 @@ struct SceneConstantBuffer {
     ambient_color: Vector4<f32>,
     sample_shadow_map: u32,
     _padding: [u32; 3], // must be aligned to be made up of N float4s
-    lights: LightState,
+    lights: [LightState; NUM_LIGHTS],
+}
+
+impl Default for SceneConstantBuffer {
+    fn default() -> Self {
+        SceneConstantBuffer {
+            model: SquareMatrix::identity(),
+            view: SquareMatrix::identity(),
+            projection: SquareMatrix::identity(),
+            ambient_color: Zero::zero(),
+            sample_shadow_map: 0,
+            _padding: [0; 3],
+            lights: [LightState::default(); NUM_LIGHTS],
+        }
+    }
 }
 
 const_assert_eq!(
@@ -85,10 +97,15 @@ const_assert_eq!(
     0
 );
 
+pub const NUM_LIGHTS: usize = 3;
+
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct LightState {
     pub position: Point3<f32>,
+    pub _pad0: f32,
     pub direction: Vector3<f32>,
+    pub _pad1: f32,
     pub color: Vector4<f32>,
     pub falloff: Vector4<f32>,
     pub view: Matrix4<f32>,
@@ -99,7 +116,9 @@ impl Default for LightState {
     fn default() -> Self {
         LightState {
             position: point3(0.0, 15.0, -30.0),
+            _pad0: 0.0,
             direction: vec3(0.0, 0.0, 1.0),
+            _pad1: 0.0,
             color: vec4(0.7, 0.7, 0.7, 1.0),
             falloff: vec4(800.0, 1.0, 0.0, 1.0),
             view: Matrix4::identity(),
@@ -148,6 +167,37 @@ impl Renderer {
             D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         )?;
 
+        // Create the depth stencil
+        let depth_desc = D3D12_RESOURCE_DESC {
+            Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            Flags: D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+                | D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE,
+            ..D3D12_RESOURCE_DESC::tex2d(DXGI_FORMAT_D32_FLOAT, width as u64, height)
+        };
+
+        let depth_stencil = unsafe {
+            device.CreateCommittedResource(
+                &HeapProperties::default(),
+                D3D12_HEAP_FLAG_NONE,
+                &depth_desc,
+                D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                &D3D12_CLEAR_VALUE {
+                    Format: DXGI_FORMAT_D32_FLOAT,
+                    Anonymous: D3D12_CLEAR_VALUE_0 {
+                        DepthStencil: D3D12_DEPTH_STENCIL_VALUE {
+                            Depth: 1.0,
+                            Stencil: 0,
+                        },
+                    },
+                },
+            )
+        }?;
+
+        let depth_stencil_view = dsv_descriptor_heap.get_cpu_descriptor_handle(0);
+        unsafe {
+            device.CreateDepthStencilView(&depth_stencil, std::ptr::null(), depth_stencil_view);
+        }
+
         // Describe and create 2 null SRVs. Null descriptors are needed in order
         // to achieve the effect of an "unbound" resource.
         let null_srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
@@ -177,31 +227,34 @@ impl Renderer {
             &mut command_queue,
             gpu_descriptor_heap.slice(2),
             null_srv_table,
+            depth_stencil,
+            depth_stencil_view,
         )?);
 
         let frames = Frames::new(
             &device,
             swap_chain,
             &rtv_descriptor_heap,
-            &dsv_descriptor_heap,
+            &dsv_descriptor_heap.slice(1),
             &gpu_descriptor_heap.slice(NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT),
             resources.clone(),
         )?;
 
         Ok(Renderer {
-            device,
+            _device: device,
             viewport,
             scissor_rect,
             command_queue,
-            rtv_descriptor_heap,
-            dsv_descriptor_heap,
-            gpu_descriptor_heap,
+            _rtv_descriptor_heap: rtv_descriptor_heap,
+            _dsv_descriptor_heap: dsv_descriptor_heap,
+            _gpu_descriptor_heap: gpu_descriptor_heap,
             frames,
         })
     }
 
     pub fn render(&mut self, state: &State) -> Result<()> {
         let render_data = self.frames.start_frame(&self.command_queue)?;
+        render_data.set_constant_buffers(&self.viewport, state);
 
         macro_rules! spawn_async_render_task {
             ( $cl:ident $(, $render_data:ident )?, $block:block ) => {{
@@ -245,7 +298,7 @@ impl Renderer {
                 );
 
                 cl.ClearDepthStencilView(
-                    render_data.shadow_depth_view,
+                    render_data.resources.depth_stencil_view,
                     D3D12_CLEAR_FLAG_DEPTH,
                     1.0,
                     0,
@@ -257,12 +310,14 @@ impl Renderer {
             }
         });
 
-        const NUM_TASKS : usize = 8;
+        const NUM_TASKS: usize = 8;
         let mut shadow_map_render: [_; NUM_TASKS] = try_array_init(|task_index| -> Result<_> {
             let viewport = self.viewport;
             let scissor_rect = self.scissor_rect;
             let task = spawn_async_render_task!(cl, render_data, {
-                unsafe { cl.SetPipelineState(&render_data.resources.shadow_map_pso); }
+                unsafe {
+                    cl.SetPipelineState(&render_data.resources.shadow_map_pso);
+                }
                 render_data
                     .resources
                     .set_common_pipeline_state(&cl, viewport, scissor_rect);
@@ -272,7 +327,9 @@ impl Renderer {
                     // Set null SRVs for the diffuse/normal textures.
                     cl.SetGraphicsRootDescriptorTable(0, render_data.resources.null_srv_table);
 
-                    render_data.resources.draw(&cl, task_index, NUM_TASKS, false);
+                    render_data
+                        .resources
+                        .draw(&cl, task_index, NUM_TASKS, false);
 
                     cl.Close().ok()?
                 }
@@ -295,6 +352,27 @@ impl Renderer {
                 cl.Close().ok()?
             }
         });
+
+        let mut scene_render: [_; NUM_TASKS] = try_array_init(|task_index| -> Result<_> {
+            let viewport = self.viewport;
+            let scissor_rect = self.scissor_rect;
+            let task = spawn_async_render_task!(cl, render_data, {
+                unsafe {
+                    cl.SetPipelineState(&render_data.resources.scene_pso);
+                }
+                render_data
+                    .resources
+                    .set_common_pipeline_state(&cl, viewport, scissor_rect);
+                render_data.set_scene_pass_state(&cl);
+
+                unsafe {
+                    render_data.resources.draw(&cl, task_index, NUM_TASKS, true);
+
+                    cl.Close().ok()?
+                }
+            });
+            Ok(task)
+        })?;
 
         let post_render = spawn_async_render_task!(cl, {
             unsafe {
@@ -326,6 +404,9 @@ impl Renderer {
                 self.frames.command_lists.push(r.await?);
             }
             self.frames.command_lists.push(mid_render.await?);
+            for r in scene_render.iter_mut() {
+                self.frames.command_lists.push(r.await?);
+            }
             self.frames.command_lists.push(post_render.await?);
             Ok::<(), Error>(()) // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
         })?;
@@ -395,7 +476,7 @@ impl Frames {
                     resources.clone(),
                     unsafe { swap_chain.GetBuffer(i as u32)? },
                     rtv_descriptor_heap.get_cpu_descriptor_handle(i),
-                    dsv_descriptor_heap.get_cpu_descriptor_handle(i + 1),
+                    dsv_descriptor_heap.get_cpu_descriptor_handle(i),
                     &gpu_descriptor_heap.slice(i * PER_FRAME_GPU_DESCRIPTOR_COUNT),
                 )?),
             })
@@ -619,6 +700,51 @@ impl FrameRenderData {
         })
     }
 
+    fn set_constant_buffers(&self, viewport: &D3D12_VIEWPORT, state: &State) {
+        // Scale down the world a bit.
+        let scale_down = Matrix4::from_scale(0.1);
+
+        // The scene pass is drawn from the camera.
+        let scene_viewproj =
+            state
+                .camera
+                .get_3dview_proj_matrices(Deg(90.0), viewport.Width, viewport.Height);
+
+        // The light pass is drawn from the first light.
+        let shadow_viewproj = state.light_cameras[0].get_3dview_proj_matrices(
+            Deg(90.0),
+            viewport.Width,
+            viewport.Height,
+        );
+
+        let ambient_color = vec4(0.1, 0.2, 0.3, 1.0);
+
+        let scene_constants = SceneConstantBuffer {
+            model: scale_down,
+            view: scene_viewproj.view,
+            projection: scene_viewproj.projection,
+            ambient_color,
+            sample_shadow_map: true.into(),
+            lights: state.lights,
+            ..Default::default()
+        };
+
+        let shadow_constants = SceneConstantBuffer {
+            model: scale_down,
+            view: shadow_viewproj.view,
+            projection: shadow_viewproj.projection,
+            ambient_color,
+            sample_shadow_map: false.into(),
+            lights: state.lights,
+            ..Default::default()
+        };
+
+        unsafe {
+            self.scene_cb_ptr.write(scene_constants);
+            self.shadow_cb_ptr.write(shadow_constants);
+        }
+    }
+
     fn set_shadow_pass_state(&self, cl: &ID3D12GraphicsCommandList) {
         unsafe {
             cl.SetGraphicsRootDescriptorTable(2, self.resources.null_srv_table);
@@ -633,7 +759,12 @@ impl FrameRenderData {
             cl.SetGraphicsRootDescriptorTable(2, self.scene_srv_table);
             cl.SetGraphicsRootDescriptorTable(1, self.scene_cbv_table);
 
-            cl.OMSetRenderTargets(1, &self.render_target_view, false, &self.shadow_depth_view);
+            cl.OMSetRenderTargets(
+                1,
+                &self.render_target_view,
+                false,
+                &self.resources.depth_stencil_view,
+            );
         }
     }
 }

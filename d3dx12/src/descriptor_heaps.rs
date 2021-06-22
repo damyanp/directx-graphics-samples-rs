@@ -177,6 +177,15 @@ impl DsvDescriptorHeap {
         )
     }
 
+    pub fn slice(&self, start_index: usize) -> Self {
+        Self::from_fields(
+            self.heap.clone(), // TODO: this clone is icky
+            self.get_cpu_descriptor_handle(start_index),
+            D3D12_GPU_DESCRIPTOR_HANDLE::default(),
+            self.increment(),
+        )
+    }
+
     /// Creates a DSV in this heap.
     ///
     /// # Safety

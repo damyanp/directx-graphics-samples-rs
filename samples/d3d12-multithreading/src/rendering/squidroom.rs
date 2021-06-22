@@ -1,6 +1,3 @@
-#![allow(unused_variables)]
-#![allow(dead_code)]
-
 use array_init::{array_init, try_array_init};
 use bindings::Windows::Win32::{
     Foundation::{PSTR, RECT},
@@ -23,8 +20,10 @@ use windows::*;
 const DATA_FILE_NAME: &str = "SquidRoom.bin";
 
 pub struct Resources {
-    textures: [ID3D12Resource; TEXTURE_COUNT],
-    geometry_buffer: ID3D12Resource,
+    _textures: [ID3D12Resource; TEXTURE_COUNT],
+    pub depth_stencil: ID3D12Resource,
+    pub depth_stencil_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+    _geometry_buffer: ID3D12Resource,
     vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW,
     index_buffer_view: D3D12_INDEX_BUFFER_VIEW,
     root_signature: ID3D12RootSignature,
@@ -44,7 +43,9 @@ impl Resources {
         command_queue: &mut SynchronizedCommandQueue,
         gpu_descriptor_heap: CbvSrvUavDescriptorHeap,
         null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
-    ) -> Result<Resources> {
+        depth_stencil: ID3D12Resource,
+        depth_stencil_view: D3D12_CPU_DESCRIPTOR_HANDLE,
+        ) -> Result<Resources> {
         let sampler_descriptor_heap = create_samplers(device)?;
         let sampler_descriptor_table = sampler_descriptor_heap.start_gpu_handle();
 
@@ -57,9 +58,16 @@ impl Resources {
         let root_signature = create_root_signature(device)?;
         let (scene_pso, shadow_map_pso) = create_pipeline_states(device, &root_signature)?;
 
+        let descriptor_heaps = [
+            Some(gpu_descriptor_heap.heap.clone()),
+            Some(sampler_descriptor_heap.heap),
+        ];
+
         Ok(Resources {
-            textures,
-            geometry_buffer,
+            _textures: textures,
+            depth_stencil,
+            depth_stencil_view,
+            _geometry_buffer: geometry_buffer,
             vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW {
                 BufferLocation: geometry_va,
                 SizeInBytes: VERTEX_DATA_SIZE as u32,
@@ -71,11 +79,8 @@ impl Resources {
                 Format: STANDARD_INDEX_FORMAT,
             },
             root_signature,
-            descriptor_heaps: [
-                Some(gpu_descriptor_heap.heap.clone()),
-                Some(sampler_descriptor_heap.heap),
-            ],
             gpu_descriptor_heap,
+            descriptor_heaps, 
             sampler_descriptor_table,
             null_srv_table,
             scene_pso,
@@ -154,9 +159,6 @@ fn create_samplers(device: &ID3D12Device) -> Result<SamplerDescriptorHeap> {
     unsafe {
         let sampler_descriptor_heap =
             SamplerDescriptorHeap::new(&device, 2, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)?;
-
-        let wrap = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-        let clamp = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 
         let address_mode = |m| D3D12_SAMPLER_DESC {
             AddressU: m,
@@ -295,7 +297,7 @@ fn load_textures(
         unsafe { device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &allocator, None) }?;
 
     let resources = try_array_init(|i| -> Result<ID3D12Resource> {
-        let (texture, desc, layout, _, _) = &data[i];
+        let (_, desc, layout, _, _) = &data[i];
 
         let resource: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
@@ -667,7 +669,7 @@ struct TextureResource {
     height: u32,
     format: DXGI_FORMAT,
     offset: u32,
-    size: u32,
+    _size: u32,
     pitch: u32,
 }
 
@@ -686,7 +688,7 @@ macro_rules! textures_array {
                 height: $height,
                 format: $format,
                 offset: $offset,
-                size: $size,
+                _size: $size,
                 pitch: $pitch
             }
 
@@ -697,8 +699,8 @@ macro_rules! textures_array {
 
 struct DrawParameters {
     diffuse_texture_index: usize,
-    normal_texture_index: isize,
-    specular_texture_index: isize,
+    _normal_texture_index: isize,
+    _specular_texture_index: isize,
     index_start: u32,
     index_count: u32,
     vertex_base: i32,
@@ -720,8 +722,8 @@ macro_rules! draws_array {
         [ $(
             DrawParameters {
                 diffuse_texture_index: $dti,
-                normal_texture_index: $nti,
-                specular_texture_index: $sti,
+                _normal_texture_index: $nti,
+                _specular_texture_index: $sti,
                 index_start: $is,
                 index_count: $ic,
                 vertex_base: $vb,
