@@ -590,10 +590,14 @@ fn create_pipeline_states(
         StencilFunc: D3D12_COMPARISON_FUNC_ALWAYS,
     };
 
-    // This warning is triggered by calling .as_mut_ptr() on
-    // STANDARD_VERTEX_DESCRIPTION. TODO: ideally we can annotate these struct
-    // fields as const.
-    #[allow(const_item_mutation)]
+    // Make our own copy of elements, and keep input_layout in its own binding
+    // so that it remains valid for the duration of this function.
+    let mut elements = STANDARD_VERTEX_DESCRIPTION;
+    let input_layout = D3D12_INPUT_LAYOUT_DESC {
+        pInputElementDescs: elements.as_mut_ptr(),
+        NumElements: elements.len() as u32,
+    };
+
     let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
         pRootSignature: Some(root_signature.clone()),
         VS: D3D12_SHADER_BYTECODE::from_blob(&vertex_shader),
@@ -611,10 +615,7 @@ fn create_pipeline_states(
             FrontFace: default_stencil_op,
             BackFace: default_stencil_op,
         },
-        InputLayout: D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: STANDARD_VERTEX_DESCRIPTION.as_mut_ptr(),
-            NumElements: STANDARD_VERTEX_DESCRIPTION.len() as u32,
-        },
+        InputLayout: input_layout,
         PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         NumRenderTargets: 1,
         RTVFormats: array_init(|i| {
