@@ -71,7 +71,6 @@ mod d3d12_hello_frame_buffering {
                 ..Default::default()
             };
 
-            let mut swap_chain = None;
             let swap_chain: IDXGISwapChain3 = unsafe {
                 self.dxgi_factory.CreateSwapChainForHwnd(
                     &command_queue.queue,
@@ -79,18 +78,15 @@ mod d3d12_hello_frame_buffering {
                     &swap_chain_desc,
                     std::ptr::null(),
                     None,
-                    &mut swap_chain,
                 )
-            }
-            .and_some(swap_chain)?
+            }?
             .cast()?;
 
             // This sample does not support fullscreen transitions
             unsafe {
                 self.dxgi_factory
                     .MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)
-            }
-            .ok()?;
+            }?;
 
             let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() }
                 .try_into()
@@ -142,7 +138,7 @@ mod d3d12_hello_frame_buffering {
                     &pso,
                 )
             }?;
-            unsafe { command_list.Close() }.ok()?;
+            unsafe { command_list.Close() }?;
 
             let aspect_ratio = width as f32 / height as f32;
 
@@ -203,14 +199,14 @@ mod d3d12_hello_frame_buffering {
 
         let frame = &resources.frames[resources.frame_index];
 
-        unsafe { frame.command_allocator.Reset() }.ok()?;
+        unsafe { frame.command_allocator.Reset() }?;
 
         let command_list = &resources.command_list;
 
         // However, when ExecuteCommandList() is called on a particular
         // command list, that command list can then be reset at any time and
         // must be before re-recording.
-        unsafe { command_list.Reset(&frame.command_allocator, &resources.pso) }.ok()?;
+        unsafe { command_list.Reset(&frame.command_allocator, &resources.pso) }?;
 
         // Set necessary state.
         unsafe {
@@ -256,7 +252,7 @@ mod d3d12_hello_frame_buffering {
             );
         }
 
-        unsafe { command_list.Close() }.ok()
+        unsafe { command_list.Close() }
     }
 
     fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
@@ -267,15 +263,15 @@ mod d3d12_hello_frame_buffering {
 
         let mut signature = None;
 
-        let signature = unsafe {
+        unsafe {
             D3D12SerializeRootSignature(
                 &desc,
                 D3D_ROOT_SIGNATURE_VERSION_1,
                 &mut signature,
                 std::ptr::null_mut(),
             )
-        }
-        .and_some(signature)?;
+        }?;
+        let signature = signature.expect("serialized signature");
 
         unsafe {
             device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
@@ -298,7 +294,7 @@ mod d3d12_hello_frame_buffering {
         let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
         let mut vertex_shader = None;
-        let vertex_shader = unsafe {
+        unsafe {
             D3DCompileFromFile(
                 shaders_hlsl,
                 std::ptr::null_mut(),
@@ -310,11 +306,11 @@ mod d3d12_hello_frame_buffering {
                 &mut vertex_shader,
                 std::ptr::null_mut(),
             )
-        }
-        .and_some(vertex_shader)?;
+        }?;
+        let vertex_shader = vertex_shader.expect("vertex shader");
 
         let mut pixel_shader = None;
-        let pixel_shader = unsafe {
+        unsafe {
             D3DCompileFromFile(
                 shaders_hlsl,
                 std::ptr::null_mut(),
@@ -326,8 +322,8 @@ mod d3d12_hello_frame_buffering {
                 &mut pixel_shader,
                 std::ptr::null_mut(),
             )
-        }
-        .and_some(pixel_shader)?;
+        }?;
+        let pixel_shader = pixel_shader.expect("pixel shader");
 
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
@@ -412,7 +408,7 @@ mod d3d12_hello_frame_buffering {
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut data = std::ptr::null_mut();
-            vertex_buffer.Map(0, std::ptr::null(), &mut data).ok()?;
+            vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
             std::ptr::copy_nonoverlapping(
                 vertices.as_ptr(),
                 data as *mut Vertex,

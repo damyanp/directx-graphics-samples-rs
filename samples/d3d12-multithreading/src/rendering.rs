@@ -4,7 +4,7 @@ use bindings::Windows::Win32::{
     Foundation::{HWND, RECT},
     Graphics::{Direct3D12::*, Dxgi::*},
 };
-use cgmath::{Deg, Matrix4, Point3, SquareMatrix, Vector3, Vector4, Zero, point3, vec3, vec4};
+use cgmath::{point3, vec3, vec4, Deg, Matrix4, Point3, SquareMatrix, Vector3, Vector4, Zero};
 use d3dx12::*;
 use dxsample::*;
 use static_assertions::const_assert_eq;
@@ -237,7 +237,7 @@ impl Renderer {
             &rtv_descriptor_heap,
             &dsv_descriptor_heap.slice(1),
             &gpu_descriptor_heap.slice(NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT),
-            resources.clone(),
+            resources,
         )?;
 
         Ok(Renderer {
@@ -306,7 +306,7 @@ impl Renderer {
                     std::ptr::null(),
                 );
 
-                cl.Close().ok()?
+                cl.Close()?
             }
         });
 
@@ -331,7 +331,7 @@ impl Renderer {
                         .resources
                         .draw(&cl, task_index, NUM_TASKS, false);
 
-                    cl.Close().ok()?
+                    cl.Close()?
                 }
             });
             Ok(task)
@@ -349,7 +349,7 @@ impl Renderer {
                     ),
                 );
 
-                cl.Close().ok()?
+                cl.Close()?
             }
         });
 
@@ -368,7 +368,7 @@ impl Renderer {
                 unsafe {
                     render_data.resources.draw(&cl, task_index, NUM_TASKS, true);
 
-                    cl.Close().ok()?
+                    cl.Close()?
                 }
             });
             Ok(task)
@@ -394,7 +394,7 @@ impl Renderer {
                     ]
                     .as_ptr(),
                 );
-                cl.Close().ok()?
+                cl.Close()?
             }
         });
 
@@ -438,21 +438,12 @@ fn create_swap_chain(
         ..Default::default()
     };
 
-    let mut swap_chain: Option<IDXGISwapChain1> = None;
     let swap_chain = unsafe {
-        factory.CreateSwapChainForHwnd(
-            command_queue,
-            hwnd,
-            &desc,
-            std::ptr::null(),
-            None,
-            &mut swap_chain,
-        )
-    }
-    .and_some(swap_chain)?
+        factory.CreateSwapChainForHwnd(command_queue, hwnd, &desc, std::ptr::null(), None)
+    }?
     .cast::<IDXGISwapChain3>()?;
 
-    unsafe { factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER) }.ok()?;
+    unsafe { factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER) }?;
 
     Ok(swap_chain)
 }
@@ -506,7 +497,7 @@ impl Frames {
     fn end_frame(&mut self, command_queue: &mut SynchronizedCommandQueue) -> Result<()> {
         command_queue.execute_command_lists(&self.command_lists);
 
-        unsafe { self.swap_chain.Present(1, 0).ok()? }
+        unsafe { self.swap_chain.Present(1, 0)? }
 
         let frame = &mut self.frames[self.current_index];
         frame.end(command_queue)?;
@@ -533,11 +524,7 @@ impl Frames {
 
         let frame = &mut self.frames[self.current_index];
 
-        unsafe {
-            command_list
-                .Reset(frame.get_command_allocator(&self.device)?, None)
-                .ok()?
-        }
+        unsafe { command_list.Reset(frame.get_command_allocator(&self.device)?, None)? }
 
         Ok(command_list)
     }
@@ -547,7 +534,7 @@ impl Frame {
     fn start(&mut self, command_queue: &SynchronizedCommandQueue) -> Result<()> {
         command_queue.wait_for_gpu(self.fence_value)?;
         for ca in &self.command_allocators {
-            unsafe { ca.Reset().ok()? }
+            unsafe { ca.Reset()? }
         }
         self.next_command_allocator = 0;
         Ok(())
@@ -632,12 +619,8 @@ impl FrameRenderData {
         let mut scene_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
 
         unsafe {
-            shadow_cb
-                .Map(0, &D3D12_RANGE::default(), transmute(&mut shadow_cb_ptr))
-                .ok()?;
-            scene_cb
-                .Map(0, &D3D12_RANGE::default(), transmute(&mut scene_cb_ptr))
-                .ok()?;
+            shadow_cb.Map(0, &D3D12_RANGE::default(), transmute(&mut shadow_cb_ptr))?;
+            scene_cb.Map(0, &D3D12_RANGE::default(), transmute(&mut scene_cb_ptr))?;
         }
 
         let shadow_srv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(0);

@@ -10,7 +10,7 @@ bindings = { path="../../../bindings" }
 d3dx12 = { path="../../../d3dx12" }
 dxsample = { path="../../dxsample" }
 static_assertions = "1.1.0"
-windows = { package="windows", git="https://github.com/damyanp/windows-rs" }
+windows = { package="windows", git="https://github.com/microsoft/windows-rs" }
 
 [build-dependencies]
 d3dx12 = { path="../../../d3dx12" }

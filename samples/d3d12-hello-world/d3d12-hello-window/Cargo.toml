@@ -8,5 +8,5 @@ edition = "2018"
 bindings = { path = "../../../bindings" }
 d3dx12 = { path = "../../../d3dx12" }
 dxsample = { path = "../../dxsample" }
-windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }
+windows = { package = "windows", git="https://github.com/microsoft/windows-rs" }
 array-init = "2.0.0"

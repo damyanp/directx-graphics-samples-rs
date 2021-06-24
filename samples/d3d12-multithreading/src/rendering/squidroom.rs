@@ -45,7 +45,7 @@ impl Resources {
         null_srv_table: D3D12_GPU_DESCRIPTOR_HANDLE,
         depth_stencil: ID3D12Resource,
         depth_stencil_view: D3D12_CPU_DESCRIPTOR_HANDLE,
-        ) -> Result<Resources> {
+    ) -> Result<Resources> {
         let sampler_descriptor_heap = create_samplers(device)?;
         let sampler_descriptor_table = sampler_descriptor_heap.start_gpu_handle();
 
@@ -80,7 +80,7 @@ impl Resources {
             },
             root_signature,
             gpu_descriptor_heap,
-            descriptor_heaps, 
+            descriptor_heaps,
             sampler_descriptor_table,
             null_srv_table,
             scene_pso,
@@ -241,9 +241,7 @@ fn load_textures(
     // Populate the upload buffer with data from the file
     let mut ptr: *mut u8 = std::ptr::null_mut();
     unsafe {
-        upload_buffer
-            .Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))
-            .ok()?;
+        upload_buffer.Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))?;
     }
 
     for (texture, _, layout, num_rows, total_bytes) in data.iter() {
@@ -365,7 +363,7 @@ fn load_textures(
         cl.ResourceBarrier(barriers.len() as u32, barriers.as_ptr());
     }
 
-    unsafe { cl.Close() }.ok()?;
+    unsafe { cl.Close() }?;
     command_queue.execute_command_lists(&[cl]);
     command_queue.signal_and_wait_for_gpu()?;
     Ok(resources)
@@ -391,9 +389,7 @@ fn load_geometry(
     // Load all the geometry data from the file
     let mut ptr: *mut u8 = std::ptr::null_mut();
     unsafe {
-        upload_buffer
-            .Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))
-            .ok()?;
+        upload_buffer.Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))?;
 
         std::assert_eq!(VERTEX_DATA_OFFSET + VERTEX_DATA_SIZE, INDEX_DATA_OFFSET);
         file.seek_read(
@@ -423,7 +419,7 @@ fn load_geometry(
             device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &allocator, None)?;
 
         cl.CopyResource(&geometry_buffer, &upload_buffer);
-        cl.Close().ok()?;
+        cl.Close()?;
 
         command_queue.execute_command_lists(&[cl]);
         command_queue.signal_and_wait_for_gpu()?;
@@ -511,7 +507,7 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     let mut error: Option<ID3DBlob> = None;
 
     unsafe {
-        D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error).ok()?;
+        D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error)?;
 
         let signature = signature.expect("root signature");
         let root_signature = device.CreateRootSignature(
@@ -541,7 +537,7 @@ fn create_pipeline_states(
     let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
     let mut vertex_shader = None;
-    let vertex_shader = unsafe {
+    unsafe {
         D3DCompileFromFile(
             shaders_hlsl,
             std::ptr::null_mut(),
@@ -553,11 +549,11 @@ fn create_pipeline_states(
             &mut vertex_shader,
             std::ptr::null_mut(),
         )
-    }
-    .and_some(vertex_shader)?;
+    }?;
+    let vertex_shader = vertex_shader.expect("vertex shader");
 
     let mut pixel_shader = None;
-    let pixel_shader = unsafe {
+    unsafe {
         D3DCompileFromFile(
             shaders_hlsl,
             std::ptr::null_mut(),
@@ -569,8 +565,8 @@ fn create_pipeline_states(
             &mut pixel_shader,
             std::ptr::null_mut(),
         )
-    }
-    .and_some(pixel_shader)?;
+    }?;
+    let pixel_shader = pixel_shader.expect("pixel shader");
 
     let default_stencil_op = D3D12_DEPTH_STENCILOP_DESC {
         StencilFailOp: D3D12_STENCIL_OP_KEEP,

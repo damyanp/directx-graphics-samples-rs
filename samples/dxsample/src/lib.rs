@@ -205,11 +205,9 @@ extern "system" fn wndproc<S: DXSample>(
 
 fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
     for i in 0.. {
-        let mut adapter = None;
-        let adapter = unsafe { factory.EnumAdapters1(i, &mut adapter) }.and_some(adapter)?;
+        let adapter = unsafe { factory.EnumAdapters1(i) }?;
 
-        let mut desc = Default::default();
-        unsafe { adapter.GetDesc1(&mut desc) }.ok()?;
+        let desc = unsafe { adapter.GetDesc1() }?;
 
         if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE)
             != DXGI_ADAPTER_FLAG_NONE
@@ -328,7 +326,7 @@ impl SynchronizedCommandQueue {
     }
 
     pub fn enqueue_signal(&mut self) -> Result<u64> {
-        unsafe { self.queue.Signal(&self.fence, self.fence_value) }.ok()?;
+        unsafe { self.queue.Signal(&self.fence, self.fence_value) }?;
 
         let signaled_value = self.fence_value;
         self.fence_value += 1;
@@ -339,8 +337,7 @@ impl SynchronizedCommandQueue {
     pub fn wait_for_gpu(&self, signaled_value: u64) -> Result<()> {
         unsafe {
             self.fence
-                .SetEventOnCompletion(signaled_value, self.fence_event)
-                .ok()?;
+                .SetEventOnCompletion(signaled_value, self.fence_event)?;
             WaitForSingleObject(self.fence_event, INFINITE);
         }
 

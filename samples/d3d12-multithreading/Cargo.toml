@@ -13,7 +13,7 @@ d3dx12 = { path="../../d3dx12" }
 dxsample = { path="../dxsample" }
 futures = { version="0.3.*", features=["thread-pool"] }
 static_assertions = "1.1.0"
-windows = { package="windows", git="https://github.com/damyanp/windows-rs" }
+windows = { package="windows", git="https://github.com/microsoft/windows-rs" }
 c_str_macro = "1.0.3"
 
 [build-dependencies]

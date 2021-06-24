@@ -185,7 +185,7 @@ impl MultithreadingApp {
 }
 
 fn main() -> Result<()> {
-    unsafe { DXGIDeclareAdapterRemovalSupport() }.ok()?;
+    unsafe { DXGIDeclareAdapterRemovalSupport() }?;
     run_sample::<MultithreadingApp>()?;
     Ok(())
 }
