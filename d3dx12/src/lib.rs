@@ -9,6 +9,9 @@ pub use pipeline_states::*;
 
 pub mod build;
 
+mod root_signature;
+pub use root_signature::*;
+
 pub fn transition_barrier(
     resource: &ID3D12Resource,
     state_before: D3D12_RESOURCE_STATES,

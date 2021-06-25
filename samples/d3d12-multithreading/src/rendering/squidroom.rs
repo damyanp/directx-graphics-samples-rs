@@ -428,66 +428,51 @@ fn load_geometry(
 }
 
 fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
-    let ranges = [
-        // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            NumDescriptors: 2,
-            BaseShaderRegister: 1,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-        // 1 frequently changed constant buffer.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
-            NumDescriptors: 1,
-            BaseShaderRegister: 0,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-        // 1 infrequently changed shadow texture - starting in register t0.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-            NumDescriptors: 1,
-            BaseShaderRegister: 0,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-        // 2 static samplers.
-        D3D12_DESCRIPTOR_RANGE1 {
-            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
-            NumDescriptors: 2,
-            BaseShaderRegister: 0,
-            RegisterSpace: 0,
-            Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-            OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-        },
-    ];
+    // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
+    let per_draw_textures = &[D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 2,
+        BaseShaderRegister: 1,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
 
-    fn descriptor_table(
-        ranges: &mut [D3D12_DESCRIPTOR_RANGE1],
-        visibility: D3D12_SHADER_VISIBILITY,
-    ) -> D3D12_ROOT_PARAMETER1 {
-        D3D12_ROOT_PARAMETER1 {
-            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-            ShaderVisibility: visibility,
-            Anonymous: D3D12_ROOT_PARAMETER1_0 {
-                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE1 {
-                    NumDescriptorRanges: ranges.len() as u32,
-                    pDescriptorRanges: ranges.as_mut_ptr(),
-                },
-            },
-        }
-    }
+    // 1 frequently changed constant buffer.
+    let constants = &[D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+        NumDescriptors: 1,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
 
-    let mut root_parameters = [
-        descriptor_table(&mut [ranges[0]], D3D12_SHADER_VISIBILITY_PIXEL),
-        descriptor_table(&mut [ranges[1]], D3D12_SHADER_VISIBILITY_ALL),
-        descriptor_table(&mut [ranges[2]], D3D12_SHADER_VISIBILITY_PIXEL),
-        descriptor_table(&mut [ranges[3]], D3D12_SHADER_VISIBILITY_PIXEL),
+    // 1 infrequently changed shadow texture - starting in register t0.
+    let shadow_texture = &[D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 1,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
+
+    // 2 static samplers.
+    let samplers = &[D3D12_DESCRIPTOR_RANGE1 {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+        NumDescriptors: 2,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        Flags: D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
+        OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+    }];
+
+    let root_parameters = [
+        descriptor_table(per_draw_textures, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(constants, D3D12_SHADER_VISIBILITY_ALL),
+        descriptor_table(shadow_texture, D3D12_SHADER_VISIBILITY_PIXEL),
+        descriptor_table(samplers, D3D12_SHADER_VISIBILITY_PIXEL),
     ];
 
     let desc = D3D12_VERSIONED_ROOT_SIGNATURE_DESC {
@@ -495,7 +480,7 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
             Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
                 NumParameters: root_parameters.len() as u32,
-                pParameters: root_parameters.as_mut_ptr(),
+                pParameters: unsafe { transmute(root_parameters.as_ptr()) },
                 NumStaticSamplers: 0,
                 pStaticSamplers: std::ptr::null_mut(),
                 Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
@@ -575,10 +560,13 @@ fn create_pipeline_states(
         StencilFunc: D3D12_COMPARISON_FUNC_ALWAYS,
     };
 
-    // This warning is triggered by calling .as_mut_ptr() on
-    // STANDARD_VERTEX_DESCRIPTION. TODO: ideally we can annotate these struct
-    // fields as const.
-    #[allow(const_item_mutation)]
+    let vertex_description = STANDARD_VERTEX_DESCRIPTION;
+    let input_layout = D3D12_INPUT_LAYOUT_DESC {
+        // TODO: transmute required because pInputElementDescs in mutable
+        pInputElementDescs: unsafe { transmute(vertex_description.as_ptr()) },
+        NumElements: vertex_description.len() as u32,
+    };
+
     let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
         pRootSignature: Some(root_signature.clone()),
         VS: D3D12_SHADER_BYTECODE::from_blob(&vertex_shader),
@@ -596,10 +584,7 @@ fn create_pipeline_states(
             FrontFace: default_stencil_op,
             BackFace: default_stencil_op,
         },
-        InputLayout: D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: STANDARD_VERTEX_DESCRIPTION.as_mut_ptr(),
-            NumElements: STANDARD_VERTEX_DESCRIPTION.len() as u32,
-        },
+        InputLayout: input_layout,
         PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         NumRenderTargets: 1,
         RTVFormats: array_init(|i| {
