@@ -31,7 +31,7 @@ impl<'a> Deref for D3D12_ROOT_PARAMETER1<'a> {
 #[derive(:: std :: clone :: Clone, :: std :: marker :: Copy)]
 pub struct D3D12_ROOT_DESCRIPTOR_TABLE1<'a> {
     pub NumDescriptorRanges: u32,
-    pub pDescriptorRanges: *mut D3D12_DESCRIPTOR_RANGE1,
+    pub pDescriptorRanges: *const D3D12_DESCRIPTOR_RANGE1,
     pub phantom: PhantomData<&'a [D3D12_DESCRIPTOR_RANGE1]>,
 }
 

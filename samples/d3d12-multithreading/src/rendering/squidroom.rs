@@ -13,8 +13,8 @@ use bindings::Windows::Win32::{
 };
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
-use std::os::windows::prelude::FileExt;
 use std::{fs::File, intrinsics::transmute};
+use std::{marker::PhantomData, os::windows::prelude::FileExt};
 use windows::*;
 
 const DATA_FILE_NAME: &str = "SquidRoom.bin";
@@ -560,13 +560,6 @@ fn create_pipeline_states(
         StencilFunc: D3D12_COMPARISON_FUNC_ALWAYS,
     };
 
-    let vertex_description = STANDARD_VERTEX_DESCRIPTION;
-    let input_layout = D3D12_INPUT_LAYOUT_DESC {
-        // TODO: transmute required because pInputElementDescs in mutable
-        pInputElementDescs: unsafe { transmute(vertex_description.as_ptr()) },
-        NumElements: vertex_description.len() as u32,
-    };
-
     let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
         pRootSignature: Some(root_signature.clone()),
         VS: D3D12_SHADER_BYTECODE::from_blob(&vertex_shader),
@@ -584,7 +577,11 @@ fn create_pipeline_states(
             FrontFace: default_stencil_op,
             BackFace: default_stencil_op,
         },
-        InputLayout: input_layout,
+        InputLayout: *(d3dx12::pipeline_states::D3D12_INPUT_LAYOUT_DESC {
+            pInputElementDescs: STANDARD_VERTEX_DESCRIPTION.as_ptr(),
+            NumElements: STANDARD_VERTEX_DESCRIPTION.len() as u32,
+            lifetime: PhantomData,
+        }),
         PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         NumRenderTargets: 1,
         RTVFormats: array_init(|i| {

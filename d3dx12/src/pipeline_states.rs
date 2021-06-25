@@ -1,3 +1,7 @@
+#![allow(non_snake_case)]
+
+use std::{marker::PhantomData, ops::Deref};
+
 use bindings::Windows::Win32::Graphics::{Direct3D11::ID3DBlob, Direct3D12::*};
 
 pub trait ShaderBytecode {
@@ -32,6 +36,22 @@ impl RasterizerDesc for D3D12_RASTERIZER_DESC {
             ForcedSampleCount: 0,
             ConservativeRaster: D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
         }
+    }
+}
+
+#[repr(C)]
+#[derive(:: std :: clone :: Clone, :: std :: marker :: Copy)]
+pub struct D3D12_INPUT_LAYOUT_DESC<'a> {
+    pub pInputElementDescs: *const D3D12_INPUT_ELEMENT_DESC,
+    pub NumElements: u32,
+    pub lifetime: PhantomData<&'a [D3D12_INPUT_ELEMENT_DESC]>,
+}
+
+impl<'a> Deref for D3D12_INPUT_LAYOUT_DESC<'a> {
+    type Target = bindings::Windows::Win32::Graphics::Direct3D12::D3D12_INPUT_LAYOUT_DESC;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { std::mem::transmute(self) }
     }
 }
 

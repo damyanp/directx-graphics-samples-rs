@@ -4,7 +4,7 @@ use windows::*;
 mod descriptor_heaps;
 pub use descriptor_heaps::*;
 
-mod pipeline_states;
+pub mod pipeline_states;
 pub use pipeline_states::*;
 
 pub mod build;
