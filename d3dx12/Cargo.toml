@@ -6,6 +6,6 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-bindings = { path = "../bindings" }
-windows = { package = "windows", git="https://github.com/damyanp/windows-rs" }
+[dependencies.windows]
+version = "0.24"
+features = ["Win32_Graphics_Direct3D11", "Win32_Graphics_Direct3D12", "Win32_Graphics_Dxgi", "Win32_Foundation"]

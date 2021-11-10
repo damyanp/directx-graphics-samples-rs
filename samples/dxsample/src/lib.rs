@@ -1,4 +1,7 @@
-use bindings::Windows::Win32::{
+use std::mem::transmute;
+use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
+use windows::runtime::*;
+use windows::Win32::{
     Foundation::*,
     Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*},
     System::LibraryLoader::*,
@@ -6,8 +9,6 @@ use bindings::Windows::Win32::{
     System::WindowsProgramming::*,
     UI::WindowsAndMessaging::*,
 };
-use std::mem::transmute;
-use windows::*;
 
 pub trait DXSample {
     fn new(command_line: &SampleCommandLine) -> Result<Self>
@@ -18,8 +19,8 @@ pub trait DXSample {
 
     fn update(&mut self) {}
     fn render(&mut self) {}
-    fn on_key_up(&mut self, _key: u8) {}
-    fn on_key_down(&mut self, _key: u8) {}
+    fn on_key_up(&mut self, _key: VIRTUAL_KEY) {}
+    fn on_key_down(&mut self, _key: VIRTUAL_KEY) {}
 
     fn title(&self) -> String {
         "D3D12 Hello Triangle".into()
@@ -52,7 +53,7 @@ where
     S: DXSample,
 {
     let instance = unsafe { GetModuleHandleA(None) };
-    debug_assert!(!instance.is_null());
+    debug_assert_ne!(instance.0, 0);
 
     let wc = WNDCLASSEXA {
         cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
@@ -78,7 +79,7 @@ where
         right: size.0,
         bottom: size.1,
     };
-    unsafe { AdjustWindowRect(&mut window_rect, WS_OVERLAPPEDWINDOW.0, false) };
+    unsafe { AdjustWindowRect(&mut window_rect, WS_OVERLAPPEDWINDOW, false) };
 
     let mut title = sample.title();
 
@@ -102,7 +103,7 @@ where
             &mut sample as *mut _ as _,
         )
     };
-    debug_assert!(!hwnd.is_null());
+    debug_assert_ne!(hwnd.0, 0);
 
     sample.bind_to_window(&hwnd)?;
 
@@ -129,11 +130,11 @@ where
 fn sample_wndproc<S: DXSample>(sample: &mut S, message: u32, wparam: WPARAM) -> bool {
     match message {
         WM_KEYDOWN => {
-            sample.on_key_down(wparam.0 as u8);
+            sample.on_key_down(VIRTUAL_KEY(wparam.0 as u16));
             true
         }
         WM_KEYUP => {
-            sample.on_key_up(wparam.0 as u8);
+            sample.on_key_up(VIRTUAL_KEY(wparam.0 as u16));
             true
         }
         WM_PAINT => {
@@ -205,11 +206,8 @@ extern "system" fn wndproc<S: DXSample>(
 
 fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
     for i in 0.. {
-        let mut adapter = None;
-        let adapter = unsafe { factory.EnumAdapters1(i, &mut adapter) }.and_some(adapter)?;
-
-        let mut desc = Default::default();
-        unsafe { adapter.GetDesc1(&mut desc) }.ok()?;
+        let adapter = unsafe { factory.EnumAdapters1(i) }?;
+        let desc = unsafe { adapter.GetDesc1() }?;
 
         if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE)
             != DXGI_ADAPTER_FLAG_NONE
@@ -223,18 +221,18 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         #[link(name = "d3d12")]
         extern "system" {
             pub fn D3D12CreateDevice(
-                padapter: ::windows::RawPtr,
+                padapter: RawPtr,
                 minimumfeaturelevel: D3D_FEATURE_LEVEL,
-                riid: *const ::windows::Guid,
+                riid: *const GUID,
                 ppdevice: *mut *mut ::std::ffi::c_void,
-            ) -> ::windows::HRESULT;
+            ) -> HRESULT;
         }
 
         // Check to see whether the adapter supports Direct3D 12, but don't
         // create the actual device yet.
         if unsafe {
             D3D12CreateDevice(
-                adapter.abi(),
+                std::mem::transmute_copy(&adapter),
                 D3D_FEATURE_LEVEL_11_0,
                 &ID3D12Device::IID,
                 std::ptr::null_mut(),
@@ -252,7 +250,8 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
 pub fn create_device(command_line: &SampleCommandLine) -> Result<(IDXGIFactory4, ID3D12Device)> {
     if cfg!(debug_assertions) {
         unsafe {
-            if let Ok(debug) = D3D12GetDebugInterface::<ID3D12Debug>() {
+            let mut debug: Option<ID3D12Debug> = None;
+            if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and_then(|_| debug) {
                 debug.EnableDebugLayer();
             }
         }
@@ -272,8 +271,10 @@ pub fn create_device(command_line: &SampleCommandLine) -> Result<(IDXGIFactory4,
         get_hardware_adapter(&dxgi_factory)
     }?;
 
-    let device = unsafe { D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0) }?;
-    Ok((dxgi_factory, device))
+    let mut device: Option<ID3D12Device> = None;
+    unsafe { D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }?;
+
+    Ok((dxgi_factory, device.unwrap()))
 }
 
 /// A command queue, a fence, and an event.  This allows us to synchronize the
@@ -328,7 +329,7 @@ impl SynchronizedCommandQueue {
     }
 
     pub fn enqueue_signal(&mut self) -> Result<u64> {
-        unsafe { self.queue.Signal(&self.fence, self.fence_value) }.ok()?;
+        unsafe { self.queue.Signal(&self.fence, self.fence_value) }?;
 
         let signaled_value = self.fence_value;
         self.fence_value += 1;
@@ -339,8 +340,7 @@ impl SynchronizedCommandQueue {
     pub fn wait_for_gpu(&self, signaled_value: u64) -> Result<()> {
         unsafe {
             self.fence
-                .SetEventOnCompletion(signaled_value, self.fence_event)
-                .ok()?;
+                .SetEventOnCompletion(signaled_value, self.fence_event)?;
             WaitForSingleObject(self.fence_event, INFINITE);
         }
 

@@ -1,4 +1,4 @@
-use bindings::Windows::Win32::Graphics::{Direct3D11::ID3DBlob, Direct3D12::*};
+use windows::Win32::Graphics::{Direct3D11::ID3DBlob, Direct3D12::*};
 
 pub trait ShaderBytecode {
     fn from_blob(blob: &ID3DBlob) -> Self;

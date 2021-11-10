@@ -1,17 +1,23 @@
 use array_init::try_array_init;
 use async_std::task;
-use bindings::Windows::Win32::{
-    Foundation::{HWND, RECT},
-    Graphics::{Direct3D12::*, Dxgi::*},
-};
-use cgmath::{Deg, Matrix4, Point3, SquareMatrix, Vector3, Vector4, Zero, point3, vec3, vec4};
+use cgmath::{point3, vec3, vec4, Deg, Matrix4, Point3, SquareMatrix, Vector3, Vector4, Zero};
 use d3dx12::*;
 use dxsample::*;
 use static_assertions::const_assert_eq;
 use std::{intrinsics::transmute, sync::Arc};
-use windows::*;
+use windows::runtime::*;
+use windows::Win32::{
+    Foundation::{HWND, RECT},
+    Graphics::{Direct3D12::*, Dxgi::*},
+};
 
 use crate::State;
+
+struct SendableID3D12GraphicsCommandList(ID3D12GraphicsCommandList);
+
+unsafe impl Send for SendableID3D12GraphicsCommandList {}
+unsafe impl Sync for SendableID3D12GraphicsCommandList {}
+
 
 mod squidroom;
 use squidroom::*;
@@ -175,6 +181,7 @@ impl Renderer {
             ..D3D12_RESOURCE_DESC::tex2d(DXGI_FORMAT_D32_FLOAT, width as u64, height)
         };
 
+        let mut depth_stencil = None;
         let depth_stencil = unsafe {
             device.CreateCommittedResource(
                 &HeapProperties::default(),
@@ -190,8 +197,10 @@ impl Renderer {
                         },
                     },
                 },
+                &mut depth_stencil,
             )
-        }?;
+        }
+        .and(Ok(depth_stencil.unwrap()))?;
 
         let depth_stencil_view = dsv_descriptor_heap.get_cpu_descriptor_handle(0);
         unsafe {
@@ -258,11 +267,12 @@ impl Renderer {
 
         macro_rules! spawn_async_render_task {
             ( $cl:ident $(, $render_data:ident )?, $block:block ) => {{
-                let $cl = self.frames.get_next_command_list()?;
+                let $cl = SendableID3D12GraphicsCommandList(self.frames.get_next_command_list()?);
                 $( let $render_data = render_data.clone(); )?
                 task::spawn(async move {
+                    let $cl = $cl.0;
                     $block
-                    Ok::<ID3D12GraphicsCommandList, Error>($cl)
+                    Ok::<SendableID3D12GraphicsCommandList, Error>(SendableID3D12GraphicsCommandList($cl))
                 })}
             };
         }
@@ -306,7 +316,7 @@ impl Renderer {
                     std::ptr::null(),
                 );
 
-                cl.Close().ok()?
+                cl.Close()?
             }
         });
 
@@ -331,7 +341,7 @@ impl Renderer {
                         .resources
                         .draw(&cl, task_index, NUM_TASKS, false);
 
-                    cl.Close().ok()?
+                    cl.Close()?
                 }
             });
             Ok(task)
@@ -349,7 +359,7 @@ impl Renderer {
                     ),
                 );
 
-                cl.Close().ok()?
+                cl.Close()?
             }
         });
 
@@ -368,7 +378,7 @@ impl Renderer {
                 unsafe {
                     render_data.resources.draw(&cl, task_index, NUM_TASKS, true);
 
-                    cl.Close().ok()?
+                    cl.Close()?
                 }
             });
             Ok(task)
@@ -394,20 +404,20 @@ impl Renderer {
                     ]
                     .as_ptr(),
                 );
-                cl.Close().ok()?
+                cl.Close()?
             }
         });
 
         task::block_on(async {
-            self.frames.command_lists.push(pre_render.await?);
+            self.frames.command_lists.push(pre_render.await?.0);
             for r in shadow_map_render.iter_mut() {
-                self.frames.command_lists.push(r.await?);
+                self.frames.command_lists.push(r.await?.0);
             }
-            self.frames.command_lists.push(mid_render.await?);
+            self.frames.command_lists.push(mid_render.await?.0);
             for r in scene_render.iter_mut() {
-                self.frames.command_lists.push(r.await?);
+                self.frames.command_lists.push(r.await?.0);
             }
-            self.frames.command_lists.push(post_render.await?);
+            self.frames.command_lists.push(post_render.await?.0);
             Ok::<(), Error>(()) // <-- see https://rust-lang.github.io/async-book/07_workarounds/02_err_in_async_blocks.html
         })?;
 
@@ -438,21 +448,12 @@ fn create_swap_chain(
         ..Default::default()
     };
 
-    let mut swap_chain: Option<IDXGISwapChain1> = None;
-    let swap_chain = unsafe {
-        factory.CreateSwapChainForHwnd(
-            command_queue,
-            hwnd,
-            &desc,
-            std::ptr::null(),
-            None,
-            &mut swap_chain,
-        )
-    }
-    .and_some(swap_chain)?
-    .cast::<IDXGISwapChain3>()?;
+    let swap_chain: IDXGISwapChain3 = unsafe {
+        factory.CreateSwapChainForHwnd(command_queue, hwnd, &desc, std::ptr::null(), None)
+    }?
+    .cast()?;
 
-    unsafe { factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER) }.ok()?;
+    unsafe { factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER) }?;
 
     Ok(swap_chain)
 }
@@ -506,7 +507,7 @@ impl Frames {
     fn end_frame(&mut self, command_queue: &mut SynchronizedCommandQueue) -> Result<()> {
         command_queue.execute_command_lists(&self.command_lists);
 
-        unsafe { self.swap_chain.Present(1, 0).ok()? }
+        unsafe { self.swap_chain.Present(1, 0)? }
 
         let frame = &mut self.frames[self.current_index];
         frame.end(command_queue)?;
@@ -533,11 +534,7 @@ impl Frames {
 
         let frame = &mut self.frames[self.current_index];
 
-        unsafe {
-            command_list
-                .Reset(frame.get_command_allocator(&self.device)?, None)
-                .ok()?
-        }
+        unsafe { command_list.Reset(frame.get_command_allocator(&self.device)?, None)? }
 
         Ok(command_list)
     }
@@ -547,7 +544,7 @@ impl Frame {
     fn start(&mut self, command_queue: &SynchronizedCommandQueue) -> Result<()> {
         command_queue.wait_for_gpu(self.fence_value)?;
         for ca in &self.command_allocators {
-            unsafe { ca.Reset().ok()? }
+            unsafe { ca.Reset()? }
         }
         self.next_command_allocator = 0;
         Ok(())
@@ -589,6 +586,7 @@ impl FrameRenderData {
             ..ResourceDesc::tex2d(DXGI_FORMAT_R32_TYPELESS, rt_desc.Width, rt_desc.Height)
         };
 
+        let mut shadow_texture = None;
         let shadow_texture = unsafe {
             device.CreateCommittedResource(
                 &HeapProperties::default(),
@@ -604,11 +602,14 @@ impl FrameRenderData {
                         },
                     },
                 },
-            )?
-        };
+                &mut shadow_texture,
+            )
+        }
+        .and(Ok(shadow_texture.unwrap()))?;
 
         let cb_size = std::mem::size_of::<SceneConstantBuffer>();
         let cb_desc = D3D12_RESOURCE_DESC::buffer(cb_size);
+        let mut shadow_cb = None;
         let shadow_cb: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -616,8 +617,12 @@ impl FrameRenderData {
                 &cb_desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ,
                 std::ptr::null(),
-            )?
-        };
+                &mut shadow_cb,
+            )
+        }
+        .and(Ok(shadow_cb.unwrap()))?;
+
+        let mut scene_cb = None;
         let scene_cb: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -625,19 +630,17 @@ impl FrameRenderData {
                 &cb_desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ,
                 std::ptr::null(),
-            )?
-        };
+                &mut scene_cb,
+            )
+        }
+        .and(Ok(scene_cb.unwrap()))?;
 
         let mut shadow_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
         let mut scene_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
 
         unsafe {
-            shadow_cb
-                .Map(0, &D3D12_RANGE::default(), transmute(&mut shadow_cb_ptr))
-                .ok()?;
-            scene_cb
-                .Map(0, &D3D12_RANGE::default(), transmute(&mut scene_cb_ptr))
-                .ok()?;
+            shadow_cb.Map(0, &D3D12_RANGE::default(), transmute(&mut shadow_cb_ptr))?;
+            scene_cb.Map(0, &D3D12_RANGE::default(), transmute(&mut scene_cb_ptr))?;
         }
 
         let shadow_srv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(0);

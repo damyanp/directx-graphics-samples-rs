@@ -1,10 +1,10 @@
-use bindings::Windows::Win32::{
+use d3dx12::*;
+use dxsample::*;
+use windows::runtime::*;
+use windows::Win32::{
     Foundation::*,
     Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*, Hlsl::*},
 };
-use d3dx12::*;
-use dxsample::*;
-use windows::*;
 
 mod d3d12_hello_frame_buffering {
     use std::convert::TryInto;
@@ -71,7 +71,6 @@ mod d3d12_hello_frame_buffering {
                 ..Default::default()
             };
 
-            let mut swap_chain = None;
             let swap_chain: IDXGISwapChain3 = unsafe {
                 self.dxgi_factory.CreateSwapChainForHwnd(
                     &command_queue.queue,
@@ -79,18 +78,15 @@ mod d3d12_hello_frame_buffering {
                     &swap_chain_desc,
                     std::ptr::null(),
                     None,
-                    &mut swap_chain,
                 )
-            }
-            .and_some(swap_chain)?
+            }?
             .cast()?;
 
             // This sample does not support fullscreen transitions
             unsafe {
                 self.dxgi_factory
                     .MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)
-            }
-            .ok()?;
+            }?;
 
             let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() }
                 .try_into()
@@ -142,7 +138,7 @@ mod d3d12_hello_frame_buffering {
                     &pso,
                 )
             }?;
-            unsafe { command_list.Close() }.ok()?;
+            unsafe { command_list.Close() }?;
 
             let aspect_ratio = width as f32 / height as f32;
 
@@ -203,14 +199,14 @@ mod d3d12_hello_frame_buffering {
 
         let frame = &resources.frames[resources.frame_index];
 
-        unsafe { frame.command_allocator.Reset() }.ok()?;
+        unsafe { frame.command_allocator.Reset() }?;
 
         let command_list = &resources.command_list;
 
         // However, when ExecuteCommandList() is called on a particular
         // command list, that command list can then be reset at any time and
         // must be before re-recording.
-        unsafe { command_list.Reset(&frame.command_allocator, &resources.pso) }.ok()?;
+        unsafe { command_list.Reset(&frame.command_allocator, &resources.pso) }?;
 
         // Set necessary state.
         unsafe {
@@ -256,7 +252,7 @@ mod d3d12_hello_frame_buffering {
             );
         }
 
-        unsafe { command_list.Close() }.ok()
+        unsafe { command_list.Close() }
     }
 
     fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
@@ -266,16 +262,15 @@ mod d3d12_hello_frame_buffering {
         };
 
         let mut signature = None;
-
-        let signature = unsafe {
+        unsafe {
             D3D12SerializeRootSignature(
                 &desc,
                 D3D_ROOT_SIGNATURE_VERSION_1,
                 &mut signature,
                 std::ptr::null_mut(),
             )
-        }
-        .and_some(signature)?;
+        }?;
+        let signature = signature.unwrap();
 
         unsafe {
             device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
@@ -311,7 +306,7 @@ mod d3d12_hello_frame_buffering {
                 std::ptr::null_mut(),
             )
         }
-        .and_some(vertex_shader)?;
+        .and(Ok(vertex_shader.unwrap()))?;
 
         let mut pixel_shader = None;
         let pixel_shader = unsafe {
@@ -327,7 +322,7 @@ mod d3d12_hello_frame_buffering {
                 std::ptr::null_mut(),
             )
         }
-        .and_some(pixel_shader)?;
+        .and(Ok(pixel_shader.unwrap()))?;
 
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
@@ -399,6 +394,7 @@ mod d3d12_hello_frame_buffering {
         // marshalled over. Please read up on Default Heap usage. An upload heap
         // is used here for code simplicity and because there are very few verts
         // to actually transfer.
+        let mut vertex_buffer: Option<ID3D12Resource> = None;
         let vertex_buffer: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -406,13 +402,14 @@ mod d3d12_hello_frame_buffering {
                 &D3D12_RESOURCE_DESC::buffer(std::mem::size_of_val(&vertices)),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
                 std::ptr::null(),
-            )?
-        };
+                &mut vertex_buffer,
+            )
+        }.and(Ok(vertex_buffer.unwrap()))?;
 
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut data = std::ptr::null_mut();
-            vertex_buffer.Map(0, std::ptr::null(), &mut data).ok()?;
+            vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
             std::ptr::copy_nonoverlapping(
                 vertices.as_ptr(),
                 data as *mut Vertex,

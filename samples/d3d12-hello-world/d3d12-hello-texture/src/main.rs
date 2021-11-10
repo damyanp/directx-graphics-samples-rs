@@ -1,12 +1,12 @@
-use bindings::Windows::Win32::{
-    Foundation::*,
-    Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*, Hlsl::*},
-};
 use d3dx12::*;
 use dxsample::*;
 use std::convert::TryInto;
 use std::mem::transmute;
-use windows::*;
+use windows::runtime::*;
+use windows::Win32::{
+    Foundation::*,
+    Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*, Hlsl::*},
+};
 
 mod d3d12_hello_texture {
     use super::*;
@@ -70,7 +70,6 @@ mod d3d12_hello_texture {
                 ..Default::default()
             };
 
-            let mut swap_chain = None;
             let swap_chain: IDXGISwapChain3 = unsafe {
                 self.dxgi_factory.CreateSwapChainForHwnd(
                     &command_queue.queue,
@@ -78,18 +77,15 @@ mod d3d12_hello_texture {
                     &swap_chain_desc,
                     std::ptr::null(),
                     None,
-                    &mut swap_chain,
                 )
-            }
-            .and_some(swap_chain)?
+            }?
             .cast()?;
 
             // This sample does not support fullscreen transitions
             unsafe {
                 self.dxgi_factory
                     .MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)
-            }
-            .ok()?;
+            }?;
 
             let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() }
                 .try_into()
@@ -143,7 +139,7 @@ mod d3d12_hello_texture {
                     &pso,
                 )
             }?;
-            unsafe { command_list.Close() }.ok()?;
+            unsafe { command_list.Close() }?;
 
             let aspect_ratio = width as f32 / height as f32;
 
@@ -226,14 +222,14 @@ mod d3d12_hello_texture {
         // Command list allocators can only be reset when the associated
         // command lists have finished execution on the GPU; apps should use
         // fences to determine GPU execution progress.
-        unsafe { resources.command_allocator.Reset() }.ok()?;
+        unsafe { resources.command_allocator.Reset() }?;
 
         let command_list = &resources.command_list;
 
         // However, when ExecuteCommandList() is called on a particular
         // command list, that command list can then be reset at any time and
         // must be before re-recording.
-        unsafe { command_list.Reset(&resources.command_allocator, &resources.pso) }.ok()?;
+        unsafe { command_list.Reset(&resources.command_allocator, &resources.pso) }?;
 
         // Set necessary state.
         unsafe {
@@ -283,7 +279,7 @@ mod d3d12_hello_texture {
             );
         }
 
-        unsafe { command_list.Close() }.ok()
+        unsafe { command_list.Close() }
     }
 
     fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
@@ -361,7 +357,7 @@ mod d3d12_hello_texture {
         let signature = unsafe {
             D3D12SerializeVersionedRootSignature(&desc, &mut signature, std::ptr::null_mut())
         }
-        .and_some(signature)?;
+        .and(Ok(signature.unwrap()))?;
 
         unsafe {
             device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
@@ -397,7 +393,7 @@ mod d3d12_hello_texture {
                 std::ptr::null_mut(),
             )
         }
-        .and_some(vertex_shader)?;
+        .and(Ok(vertex_shader.unwrap()))?;
 
         let mut pixel_shader = None;
         let pixel_shader = unsafe {
@@ -413,7 +409,7 @@ mod d3d12_hello_texture {
                 std::ptr::null_mut(),
             )
         }
-        .and_some(pixel_shader)?;
+        .and(Ok(pixel_shader.unwrap()))?;
 
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
@@ -485,6 +481,7 @@ mod d3d12_hello_texture {
         // marshalled over. Please read up on Default Heap usage. An upload heap
         // is used here for code simplicity and because there are very few verts
         // to actually transfer.
+        let mut vertex_buffer = None;
         let vertex_buffer: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -492,13 +489,15 @@ mod d3d12_hello_texture {
                 &D3D12_RESOURCE_DESC::buffer(std::mem::size_of_val(&vertices)),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
                 std::ptr::null(),
-            )?
-        };
+                &mut vertex_buffer,
+            )
+        }
+        .and(Ok(vertex_buffer.unwrap()))?;
 
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut data = std::ptr::null_mut();
-            vertex_buffer.Map(0, std::ptr::null(), &mut data).ok()?;
+            vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
             std::ptr::copy_nonoverlapping(
                 vertices.as_ptr(),
                 data as *mut Vertex,
@@ -531,6 +530,7 @@ mod d3d12_hello_texture {
         let texture_desc =
             D3D12_RESOURCE_DESC::tex2d(DXGI_FORMAT_R8G8B8A8_UNORM, TEXTURE_WIDTH, TEXTURE_HEIGHT);
 
+        let mut texture = None;
         let texture: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_DEFAULT),
@@ -538,8 +538,10 @@ mod d3d12_hello_texture {
                 &texture_desc,
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 std::ptr::null(),
+                &mut texture,
             )
-        }?;
+        }
+        .and(Ok(texture.unwrap()))?;
 
         let mut placed_subresource_footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
             ..Default::default()
@@ -559,6 +561,7 @@ mod d3d12_hello_texture {
             );
         }
 
+        let mut upload_buffer = None;
         let upload_buffer: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -566,14 +569,14 @@ mod d3d12_hello_texture {
                 &D3D12_RESOURCE_DESC::buffer(upload_buffer_size as usize),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
                 std::ptr::null_mut(),
+                &mut upload_buffer,
             )
-        }?;
+        }
+        .and(Ok(upload_buffer.unwrap()))?;
 
         unsafe {
             let mut upload_data = std::ptr::null_mut();
-            upload_buffer
-                .Map(0, std::ptr::null(), &mut upload_data)
-                .ok()?;
+            upload_buffer.Map(0, std::ptr::null(), &mut upload_data)?;
 
             generate_texture_data(
                 upload_data.cast(),
@@ -585,7 +588,7 @@ mod d3d12_hello_texture {
         }
 
         unsafe {
-            command_list.Reset(command_allocator, None).ok()?;
+            command_list.Reset(command_allocator, None)?;
             command_list.CopyTextureRegion(
                 &D3D12_TEXTURE_COPY_LOCATION {
                     pResource: Some(texture.clone()),
@@ -617,7 +620,7 @@ mod d3d12_hello_texture {
         }
 
         unsafe {
-            command_list.Close().ok()?;
+            command_list.Close()?;
             command_queue.ExecuteCommandLists(1, &mut Some(ID3D12CommandList::from(command_list)))
         };
 

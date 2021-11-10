@@ -1,5 +1,4 @@
-use bindings::Windows::Win32::Graphics::{Direct3D12::*, Dxgi::*};
-use windows::*;
+use windows::Win32::Graphics::{Direct3D12::*, Dxgi::*};
 
 mod descriptor_heaps;
 pub use descriptor_heaps::*;
@@ -18,13 +17,12 @@ pub fn transition_barrier(
         Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
         Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: D3D12_RESOURCE_TRANSITION_BARRIER {
+            Transition: std::mem::ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
                 pResource: Some(resource.clone()),
                 StateBefore: state_before,
                 StateAfter: state_after,
                 Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-            }
-            .abi(),
+            }),
         },
     }
 }

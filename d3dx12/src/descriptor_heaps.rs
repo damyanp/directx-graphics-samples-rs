@@ -1,5 +1,5 @@
-use bindings::Windows::Win32::Graphics::{Direct3D12::*, Dxgi::DXGI_FORMAT};
-use windows::*;
+use windows::runtime::*;
+use windows::Win32::Graphics::{Direct3D12::*, Dxgi::DXGI_FORMAT};
 
 pub trait DescriptorHeap {
     fn create(

@@ -1,5 +1,5 @@
 [workspace]
-members = ["bindings", "d3dx12", "samples/d3d12-hello-world/*", "samples/dxsample", "samples/d3d12-multithreading"]
+members = ["d3dx12", "samples/d3d12-hello-world/*", "samples/dxsample", "samples/d3d12-multithreading"]
 
 [profile.release]
 debug = true

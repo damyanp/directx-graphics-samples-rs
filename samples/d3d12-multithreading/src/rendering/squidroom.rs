@@ -1,5 +1,10 @@
 use array_init::{array_init, try_array_init};
-use bindings::Windows::Win32::{
+use d3dx12::*;
+use dxsample::SynchronizedCommandQueue;
+use std::os::windows::prelude::FileExt;
+use std::{fs::File, intrinsics::transmute};
+use windows::runtime::*;
+use windows::Win32::{
     Foundation::{PSTR, RECT},
     Graphics::{
         Direct3D11::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
@@ -11,11 +16,6 @@ use bindings::Windows::Win32::{
         },
     },
 };
-use d3dx12::*;
-use dxsample::SynchronizedCommandQueue;
-use std::os::windows::prelude::FileExt;
-use std::{fs::File, intrinsics::transmute};
-use windows::*;
 
 const DATA_FILE_NAME: &str = "SquidRoom.bin";
 
@@ -228,6 +228,7 @@ fn load_textures(
         (texture, desc, layout, num_rows, total_bytes)
     });
 
+    let mut upload_buffer = None;
     let upload_buffer: ID3D12Resource = unsafe {
         device.CreateCommittedResource(
             &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -235,15 +236,15 @@ fn load_textures(
             &D3D12_RESOURCE_DESC::buffer(upload_buffer_size as usize),
             D3D12_RESOURCE_STATE_GENERIC_READ,
             std::ptr::null(),
+            &mut upload_buffer,
         )
-    }?;
+    }
+    .and(Ok(upload_buffer.unwrap()))?;
 
     // Populate the upload buffer with data from the file
     let mut ptr: *mut u8 = std::ptr::null_mut();
     unsafe {
-        upload_buffer
-            .Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))
-            .ok()?;
+        upload_buffer.Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))?;
     }
 
     for (texture, _, layout, num_rows, total_bytes) in data.iter() {
@@ -299,6 +300,7 @@ fn load_textures(
     let resources = try_array_init(|i| -> Result<ID3D12Resource> {
         let (_, desc, layout, _, _) = &data[i];
 
+        let mut resource = None;
         let resource: ID3D12Resource = unsafe {
             device.CreateCommittedResource(
                 &HeapProperties::default(),
@@ -306,8 +308,10 @@ fn load_textures(
                 desc,
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 std::ptr::null(),
+                &mut resource,
             )
-        }?;
+        }
+        .and(Ok(resource.unwrap()))?;
 
         unsafe {
             device.CreateShaderResourceView(
@@ -365,7 +369,7 @@ fn load_textures(
         cl.ResourceBarrier(barriers.len() as u32, barriers.as_ptr());
     }
 
-    unsafe { cl.Close() }.ok()?;
+    unsafe { cl.Close() }?;
     command_queue.execute_command_lists(&[cl]);
     command_queue.signal_and_wait_for_gpu()?;
     Ok(resources)
@@ -378,6 +382,7 @@ fn load_geometry(
 ) -> Result<ID3D12Resource> {
     let buffer_size = VERTEX_DATA_SIZE + INDEX_DATA_SIZE;
 
+    let mut upload_buffer = None;
     let upload_buffer: ID3D12Resource = unsafe {
         device.CreateCommittedResource(
             &D3D12_HEAP_PROPERTIES::standard(D3D12_HEAP_TYPE_UPLOAD),
@@ -385,15 +390,15 @@ fn load_geometry(
             &D3D12_RESOURCE_DESC::buffer(buffer_size),
             D3D12_RESOURCE_STATE_GENERIC_READ,
             std::ptr::null(),
-        )?
-    };
+            &mut upload_buffer,
+        )
+    }
+    .and(Ok(upload_buffer.unwrap()))?;
 
     // Load all the geometry data from the file
     let mut ptr: *mut u8 = std::ptr::null_mut();
     unsafe {
-        upload_buffer
-            .Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))
-            .ok()?;
+        upload_buffer.Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))?;
 
         std::assert_eq!(VERTEX_DATA_OFFSET + VERTEX_DATA_SIZE, INDEX_DATA_OFFSET);
         file.seek_read(
@@ -406,6 +411,7 @@ fn load_geometry(
     }
 
     // Copy this to VRAM
+    let mut geometry_buffer = None;
     let geometry_buffer: ID3D12Resource = unsafe {
         device.CreateCommittedResource(
             &HeapProperties::default(),
@@ -413,8 +419,10 @@ fn load_geometry(
             &D3D12_RESOURCE_DESC::buffer(buffer_size),
             D3D12_RESOURCE_STATE_COMMON,
             std::ptr::null(),
-        )?
-    };
+            &mut geometry_buffer,
+        )
+    }
+    .and(Ok(geometry_buffer.unwrap()))?;
 
     unsafe {
         let allocator: ID3D12CommandAllocator =
@@ -423,7 +431,7 @@ fn load_geometry(
             device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &allocator, None)?;
 
         cl.CopyResource(&geometry_buffer, &upload_buffer);
-        cl.Close().ok()?;
+        cl.Close()?;
 
         command_queue.execute_command_lists(&[cl]);
         command_queue.signal_and_wait_for_gpu()?;
@@ -433,10 +441,9 @@ fn load_geometry(
 
 #[repr(C)] // This has the same repr as D3D12_ROOT_PARAMETER1
 struct D3D12_ROOT_PARAMETER1_WRAPPER<'a> {
-    value: D3D12_ROOT_PARAMETER1,       // <-- this does not have a lifetime, but we have safely hidden it
-    lifetime: core::marker::PhantomData<& 'a [D3D12_DESCRIPTOR_RANGE1]> // <-- this pretends to hold the lifetime
+    value: D3D12_ROOT_PARAMETER1, // <-- this does not have a lifetime, but we have safely hidden it
+    lifetime: core::marker::PhantomData<&'a [D3D12_DESCRIPTOR_RANGE1]>, // <-- this pretends to hold the lifetime
 }
-
 
 fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     // 2 frequently changed diffuse + normal textures - using registers t1 and t2.
@@ -494,10 +501,9 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
                     },
                 },
             },
-            lifetime: core::marker::PhantomData,    // make believe
+            lifetime: core::marker::PhantomData, // make believe
         }
     }
-    
 
     let root_parameters = &mut [
         descriptor_table(diffuse_normal_srv_range, D3D12_SHADER_VISIBILITY_PIXEL),
@@ -511,7 +517,7 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
             Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
                 NumParameters: root_parameters.len() as u32,
-                pParameters: unsafe{ transmute(root_parameters) },
+                pParameters: unsafe { transmute(root_parameters) },
                 NumStaticSamplers: 0,
                 pStaticSamplers: std::ptr::null_mut(),
                 Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
@@ -523,7 +529,7 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     let mut error: Option<ID3DBlob> = None;
 
     unsafe {
-        D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error).ok()?;
+        D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error)?;
         let signature = signature.expect("root signature");
         let root_signature = device.CreateRootSignature(
             0,
@@ -565,7 +571,7 @@ fn create_pipeline_states(
             std::ptr::null_mut(),
         )
     }
-    .and_some(vertex_shader)?;
+    .and(Ok(vertex_shader.unwrap()))?;
 
     let mut pixel_shader = None;
     let pixel_shader = unsafe {
@@ -581,7 +587,7 @@ fn create_pipeline_states(
             std::ptr::null_mut(),
         )
     }
-    .and_some(pixel_shader)?;
+    .and(Ok(pixel_shader.unwrap()))?;
 
     let default_stencil_op = D3D12_DEPTH_STENCILOP_DESC {
         StencilFailOp: D3D12_STENCIL_OP_KEEP,

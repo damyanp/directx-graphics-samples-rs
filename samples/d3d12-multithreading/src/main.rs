@@ -9,19 +9,19 @@
 //
 //*********************************************************
 
-use bindings::Windows::Win32::{
-    Foundation::HWND,
-    Graphics::Dxgi::{
-        DXGIDeclareAdapterRemovalSupport, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    },
-    UI::WindowsAndMessaging::*,
-};
 use camera::{Camera, ViewAndProjectionMatrices};
 use cgmath::{point3, vec3, Deg, InnerSpace, Matrix3, Rad, Transform};
 use dxsample::{run_sample, DXSample, SampleCommandLine};
 use rendering::*;
 use timer::Timer;
-use windows::*;
+use windows::runtime::*;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
+use windows::Win32::{
+    Foundation::HWND,
+    Graphics::Dxgi::{
+        DXGIDeclareAdapterRemovalSupport, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+    },
+};
 
 mod camera;
 mod rendering;
@@ -137,9 +137,8 @@ impl DXSample for MultithreadingApp {
         r.unwrap();
     }
 
-    fn on_key_up(&mut self, key: u8) {
-        // TODO: the VK_* constants should be u8 not u32?
-        match key as u32 {
+    fn on_key_up(&mut self, key: VIRTUAL_KEY) {
+        match key {
             VK_LEFT => self.input_state.left_arrow_pressed = false,
             VK_RIGHT => self.input_state.right_arrow_pressed = false,
             VK_UP => self.input_state.up_arrow_pressed = false,
@@ -149,8 +148,8 @@ impl DXSample for MultithreadingApp {
         }
     }
 
-    fn on_key_down(&mut self, key: u8) {
-        match key as u32 {
+    fn on_key_down(&mut self, key: VIRTUAL_KEY) {
+        match key {
             VK_LEFT => self.input_state.left_arrow_pressed = true,
             VK_RIGHT => self.input_state.right_arrow_pressed = true,
             VK_UP => self.input_state.up_arrow_pressed = true,
@@ -185,7 +184,7 @@ impl MultithreadingApp {
 }
 
 fn main() -> Result<()> {
-    unsafe { DXGIDeclareAdapterRemovalSupport() }.ok()?;
+    unsafe { DXGIDeclareAdapterRemovalSupport() }?;
     run_sample::<MultithreadingApp>()?;
     Ok(())
 }
