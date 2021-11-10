@@ -1,9 +1,10 @@
 use std::mem::transmute;
-use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
 use windows::runtime::*;
+use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0};
+use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
 use windows::Win32::{
     Foundation::*,
-    Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*},
+    Graphics::{Direct3D12::*, Dxgi::*},
     System::LibraryLoader::*,
     System::Threading::*,
     System::WindowsProgramming::*,

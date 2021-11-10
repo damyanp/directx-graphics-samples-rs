@@ -1,4 +1,4 @@
-use windows::Win32::Graphics::{Direct3D12::*, Dxgi::*};
+use windows::Win32::Graphics::{Direct3D12::*, Dxgi::Common::*};
 
 mod descriptor_heaps;
 pub use descriptor_heaps::*;

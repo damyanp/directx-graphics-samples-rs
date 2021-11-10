@@ -5,10 +5,12 @@ use d3dx12::*;
 use dxsample::*;
 use static_assertions::const_assert_eq;
 use std::{intrinsics::transmute, sync::Arc};
-use windows::runtime::*;
-use windows::Win32::{
-    Foundation::{HWND, RECT},
-    Graphics::{Direct3D12::*, Dxgi::*},
+use windows::{
+    runtime::*,
+    Win32::{
+        Foundation::{HWND, RECT},
+        Graphics::{Direct3D12::*, Dxgi::Common::*, Dxgi::*},
+    },
 };
 
 use crate::State;
@@ -17,7 +19,6 @@ struct SendableID3D12GraphicsCommandList(ID3D12GraphicsCommandList);
 
 unsafe impl Send for SendableID3D12GraphicsCommandList {}
 unsafe impl Sync for SendableID3D12GraphicsCommandList {}
-
 
 mod squidroom;
 use squidroom::*;

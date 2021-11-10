@@ -1,9 +1,15 @@
 use d3dx12::*;
 use dxsample::*;
-use windows::runtime::*;
-use windows::Win32::{
-    Foundation::*,
-    Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*, Hlsl::*},
+use windows::{
+    runtime::*,
+    Win32::{
+        Foundation::*,
+        Graphics::{
+            Direct3D::{Fxc::*, *},
+            Direct3D12::*,
+            Dxgi::{Common::*, *},
+        },
+    },
 };
 
 mod d3d12_hello_triangle {
@@ -395,7 +401,8 @@ mod d3d12_hello_triangle {
                 std::ptr::null(),
                 &mut vertex_buffer,
             )
-        }.and(Ok(vertex_buffer.unwrap()))?;
+        }
+        .and(Ok(vertex_buffer.unwrap()))?;
 
         // Copy the triangle data to the vertex buffer.
         unsafe {

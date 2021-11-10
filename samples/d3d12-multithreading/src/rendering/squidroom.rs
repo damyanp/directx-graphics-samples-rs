@@ -1,18 +1,21 @@
 use array_init::{array_init, try_array_init};
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
-use std::os::windows::prelude::FileExt;
-use std::{fs::File, intrinsics::transmute};
-use windows::runtime::*;
-use windows::Win32::{
-    Foundation::{PSTR, RECT},
-    Graphics::{
-        Direct3D11::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST},
-        Direct3D12::*,
-        Dxgi::*,
-        Hlsl::{
-            D3DCompileFromFile, D3DCOMPILE_DEBUG, D3DCOMPILE_OPTIMIZATION_LEVEL3,
-            D3DCOMPILE_SKIP_OPTIMIZATION,
+use std::{fs::File, intrinsics::transmute, os::windows::prelude::FileExt};
+use windows::{
+    runtime::*,
+    Win32::{
+        Foundation::{PSTR, RECT},
+        Graphics::{
+            Direct3D::{
+                Fxc::{
+                    D3DCompileFromFile, D3DCOMPILE_DEBUG, D3DCOMPILE_OPTIMIZATION_LEVEL3,
+                    D3DCOMPILE_SKIP_OPTIMIZATION,
+                },
+                ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+            },
+            Direct3D12::*,
+            Dxgi::Common::*,
         },
     },
 };

@@ -1,10 +1,12 @@
 use d3dx12::*;
 use dxsample::*;
 use std::convert::TryInto;
-use windows::runtime::*;
-use windows::Win32::{
-    Foundation::*,
-    Graphics::{Direct3D11::*, Direct3D12::*, Dxgi::*, Hlsl::*},
+use windows::{
+    runtime::*,
+    Win32::{
+        Foundation::*,
+        Graphics::{Direct3D::Fxc::*, Direct3D::*, Direct3D12::*, Dxgi::Common::*, Dxgi::*},
+    },
 };
 
 extern crate static_assertions as sa;

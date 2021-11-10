@@ -11,12 +11,14 @@ dxsample = { path="../../dxsample" }
 static_assertions = "1.1.0"
 
 [dependencies.windows]
-version = "0.24"
+version = "0.26"
 features = [
+    "std",
     "Win32_Foundation",
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Direct3D12",
     "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_System_LibraryLoader",

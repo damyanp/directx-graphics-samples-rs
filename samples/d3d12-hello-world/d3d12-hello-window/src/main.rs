@@ -1,9 +1,11 @@
 use d3dx12::*;
 use dxsample::*;
-use windows::runtime::*;
-use windows::Win32::{
-    Foundation::*,
-    Graphics::{Direct3D12::*, Dxgi::*},
+use windows::{
+    runtime::*,
+    Win32::{
+        Foundation::*,
+        Graphics::{Direct3D12::*, Dxgi::Common::*, Dxgi::*},
+    },
 };
 
 mod d3d12_hello_window {
