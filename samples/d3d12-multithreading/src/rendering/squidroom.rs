@@ -161,7 +161,7 @@ impl Resources {
 fn create_samplers(device: &ID3D12Device) -> Result<SamplerDescriptorHeap> {
     unsafe {
         let sampler_descriptor_heap =
-            SamplerDescriptorHeap::new(&device, 2, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)?;
+            SamplerDescriptorHeap::new(device, 2, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)?;
 
         let address_mode = |m| D3D12_SAMPLER_DESC {
             AddressU: m,
@@ -489,10 +489,10 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
     }];
 
-    fn descriptor_table<'a>(
-        ranges: &'a mut [D3D12_DESCRIPTOR_RANGE1],
+    fn descriptor_table(
+        ranges: &mut [D3D12_DESCRIPTOR_RANGE1],
         visibility: D3D12_SHADER_VISIBILITY,
-    ) -> D3D12_ROOT_PARAMETER1_WRAPPER<'a> {
+    ) -> D3D12_ROOT_PARAMETER1_WRAPPER {
         D3D12_ROOT_PARAMETER1_WRAPPER {
             value: D3D12_ROOT_PARAMETER1 {
                 ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,

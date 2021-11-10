@@ -43,7 +43,7 @@ mod d3d12_hello_triangle {
 
     impl DXSample for Sample {
         fn new(command_line: &SampleCommandLine) -> Result<Self> {
-            let (dxgi_factory, device) = create_device(&command_line)?;
+            let (dxgi_factory, device) = create_device(command_line)?;
 
             Ok(Sample {
                 dxgi_factory,
@@ -166,7 +166,7 @@ mod d3d12_hello_triangle {
                 Some(it) => it,
                 _ => return,
             };
-            populate_command_list(&resources).unwrap();
+            populate_command_list(resources).unwrap();
 
             // Execute the command list.
             let command_list = ID3D12CommandList::from(&resources.command_list);

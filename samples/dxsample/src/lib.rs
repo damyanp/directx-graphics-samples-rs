@@ -252,7 +252,7 @@ pub fn create_device(command_line: &SampleCommandLine) -> Result<(IDXGIFactory4,
     if cfg!(debug_assertions) {
         unsafe {
             let mut debug: Option<ID3D12Debug> = None;
-            if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and_then(|_| debug) {
+            if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and(debug) {
                 debug.EnableDebugLayer();
             }
         }

@@ -4,7 +4,9 @@
 		{
 			"type": "cargo",
 			"command": "build",
-			"args": ["--release"],
+			"args": [
+				"--release"
+			],
 			"problemMatcher": [
 				"$rustc"
 			],
@@ -18,6 +20,24 @@
 				"showReuseMessage": true,
 				"clear": true
 			}
+		},
+		{
+			"type": "cargo",
+			"command": "check",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo check"
+		},
+		{
+			"type": "cargo",
+			"command": "clippy",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build",
+			"label": "rust: cargo clippy"
 		}
 	]
 }

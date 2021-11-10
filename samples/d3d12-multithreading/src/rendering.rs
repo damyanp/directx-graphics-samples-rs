@@ -160,7 +160,7 @@ impl Renderer {
             bottom: height as i32,
         };
 
-        let (factory, device) = dxsample::create_device(&command_line)?;
+        let (factory, device) = dxsample::create_device(command_line)?;
 
         let mut command_queue =
             SynchronizedCommandQueue::new(&device, D3D12_COMMAND_LIST_TYPE_DIRECT)?;
@@ -247,7 +247,7 @@ impl Renderer {
             &rtv_descriptor_heap,
             &dsv_descriptor_heap.slice(1),
             &gpu_descriptor_heap.slice(NULL_DESCRIPTOR_COUNT + TEXTURE_DESCRIPTOR_COUNT),
-            resources.clone(),
+            resources,
         )?;
 
         Ok(Renderer {
