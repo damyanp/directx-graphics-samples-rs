@@ -13,17 +13,8 @@ futures = { version = "0.3.*", features = ["thread-pool"] }
 static_assertions = "1.1.0"
 c_str_macro = "1.0.3"
 dxsample = { path = "../dxsample" }
+windows = "0.26"
 
 [build-dependencies]
 d3dx12 = { path = "../../d3dx12" }
 dxsample = { path = "../dxsample" }
-
-[dependencies.windows]
-version = "0.26"
-features = [
-    "Win32_Graphics_Direct3D_Fxc",
-    "Win32_Graphics_Direct3D12",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Hlsl",
-    "Win32_UI_Input_KeyboardAndMouse",
-]
