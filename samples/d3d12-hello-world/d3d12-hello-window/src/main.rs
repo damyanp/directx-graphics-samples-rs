@@ -1,7 +1,7 @@
 use d3dx12::*;
 use dxsample::*;
 use windows::{
-    runtime::*,
+    core::*,
     Win32::{
         Foundation::*,
         Graphics::{Direct3D12::*, Dxgi::Common::*, Dxgi::*},

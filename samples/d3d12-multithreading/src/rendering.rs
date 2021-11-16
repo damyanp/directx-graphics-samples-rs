@@ -6,7 +6,7 @@ use dxsample::*;
 use static_assertions::const_assert_eq;
 use std::{intrinsics::transmute, sync::Arc};
 use windows::{
-    runtime::*,
+    core::*,
     Win32::{
         Foundation::{HWND, RECT},
         Graphics::{Direct3D12::*, Dxgi::Common::*, Dxgi::*},

@@ -8,4 +8,4 @@ edition = "2018"
 d3dx12 = { path = "../../../d3dx12" }
 dxsample = { path = "../../dxsample" }
 array-init = "2.0.0"
-windows = "0.26"
+windows = "0.27"

@@ -1,5 +1,5 @@
 use std::mem::transmute;
-use windows::runtime::*;
+use windows::core::*;
 use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
 use windows::Win32::{

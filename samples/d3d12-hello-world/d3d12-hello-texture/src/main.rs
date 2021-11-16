@@ -3,7 +3,7 @@ use dxsample::*;
 use std::convert::TryInto;
 use std::mem::transmute;
 use windows::{
-    runtime::*,
+    core::*,
     Win32::{
         Foundation::*,
         Graphics::{

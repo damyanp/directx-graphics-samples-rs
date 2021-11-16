@@ -3,7 +3,7 @@ use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
 use std::{fs::File, intrinsics::transmute, os::windows::prelude::FileExt};
 use windows::{
-    runtime::*,
+    core::*,
     Win32::{
         Foundation::{PSTR, RECT},
         Graphics::{

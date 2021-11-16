@@ -2,7 +2,7 @@ use d3dx12::*;
 use dxsample::*;
 use std::convert::TryInto;
 use windows::{
-    runtime::*,
+    core::*,
     Win32::{
         Foundation::*,
         Graphics::{Direct3D::Fxc::*, Direct3D::*, Direct3D12::*, Dxgi::Common::*, Dxgi::*},

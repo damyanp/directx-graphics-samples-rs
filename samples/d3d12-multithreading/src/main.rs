@@ -14,7 +14,7 @@ use cgmath::{point3, vec3, Deg, InnerSpace, Matrix3, Rad, Transform};
 use dxsample::{run_sample, DXSample, SampleCommandLine};
 use rendering::*;
 use timer::Timer;
-use windows::runtime::*;
+use windows::core::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::{
     Foundation::HWND,
