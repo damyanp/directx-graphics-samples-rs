@@ -8,7 +8,7 @@ edition = "2018"
 array-init = "2.0.0"
 d3dx12 = { path="../../../d3dx12" }
 dxsample = { path="../../dxsample" }
-windows = "0.27"
+windows = "0.29"
 
 [build-dependencies]
 d3dx12 = { path="../../../d3dx12" }

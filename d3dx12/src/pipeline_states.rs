@@ -55,7 +55,7 @@ impl BlendDesc for D3D12_BLEND_DESC {
                     DestBlendAlpha: D3D12_BLEND_ZERO,
                     BlendOpAlpha: D3D12_BLEND_OP_ADD,
                     LogicOp: D3D12_LOGIC_OP_NOOP,
-                    RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
+                    RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL as u8,
                 },
                 D3D12_RENDER_TARGET_BLEND_DESC::default(),
                 D3D12_RENDER_TARGET_BLEND_DESC::default(),

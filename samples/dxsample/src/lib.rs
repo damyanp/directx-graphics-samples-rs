@@ -54,7 +54,7 @@ where
     S: DXSample,
 {
     let instance = unsafe { GetModuleHandleA(None) };
-    debug_assert_ne!(instance.0, 0);
+    debug_assert_ne!(instance, 0);
 
     let wc = WNDCLASSEXA {
         cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
@@ -104,7 +104,7 @@ where
             &mut sample as *mut _ as _,
         )
     };
-    debug_assert_ne!(hwnd.0, 0);
+    debug_assert_ne!(hwnd, 0);
 
     sample.bind_to_window(&hwnd)?;
 
@@ -131,11 +131,11 @@ where
 fn sample_wndproc<S: DXSample>(sample: &mut S, message: u32, wparam: WPARAM) -> bool {
     match message {
         WM_KEYDOWN => {
-            sample.on_key_down(VIRTUAL_KEY(wparam.0 as u16));
+            sample.on_key_down(wparam as u16);
             true
         }
         WM_KEYUP => {
-            sample.on_key_up(VIRTUAL_KEY(wparam.0 as u16));
+            sample.on_key_up(wparam as u16);
             true
         }
         WM_PAINT => {

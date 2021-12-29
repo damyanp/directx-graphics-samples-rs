@@ -10,7 +10,7 @@ edition = "2018"
 d3dx12 = { path = "../../d3dx12" }
 
 [dependencies.windows]
-version = "0.27"
+version = "*"
 features = [
     "alloc",
     "Win32_Foundation",

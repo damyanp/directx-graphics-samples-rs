@@ -13,7 +13,7 @@ futures = { version = "0.3.*", features = ["thread-pool"] }
 static_assertions = "1.1.0"
 c_str_macro = "1.0.3"
 dxsample = { path = "../dxsample" }
-windows = "0.27"
+windows = "0.29"
 
 [build-dependencies]
 d3dx12 = { path = "../../d3dx12" }
