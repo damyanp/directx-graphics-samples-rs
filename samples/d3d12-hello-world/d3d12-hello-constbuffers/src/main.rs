@@ -13,8 +13,6 @@ extern crate static_assertions as sa;
 
 mod d3d12_hello_constbuffers {
 
-    use std::intrinsics::transmute;
-
     use super::*;
 
     const FRAME_COUNT: usize = 2;
@@ -384,7 +382,7 @@ mod d3d12_hello_constbuffers {
             Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
                 Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
                     NumParameters: 1,
-                    pParameters: unsafe { transmute(&root_parameters) },
+                    pParameters: root_parameters.as_ptr() as _,
                     Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
                     ..Default::default()
                 },
