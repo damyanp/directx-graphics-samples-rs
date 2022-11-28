@@ -1,13 +1,12 @@
 use d3dx12::*;
 use dxsample::*;
 use std::convert::TryInto;
-use std::mem::transmute;
 use windows::{
     core::*,
     Win32::{
         Foundation::*,
         Graphics::{
-            Direct3D::{*, Fxc::*},
+            Direct3D::{Fxc::*, *},
             Direct3D12::*,
             Dxgi::Common::*,
             Dxgi::*,
@@ -81,9 +80,9 @@ mod d3d12_hello_texture {
             let swap_chain: IDXGISwapChain3 = unsafe {
                 self.dxgi_factory.CreateSwapChainForHwnd(
                     &command_queue.queue,
-                    hwnd,
+                    *hwnd,
                     &swap_chain_desc,
-                    std::ptr::null(),
+                    None,
                     None,
                 )
             }?
@@ -92,7 +91,7 @@ mod d3d12_hello_texture {
             // This sample does not support fullscreen transitions
             unsafe {
                 self.dxgi_factory
-                    .MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)
+                    .MakeWindowAssociation(*hwnd, DXGI_MWA_NO_ALT_ENTER)
             }?;
 
             let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() }
@@ -216,7 +215,7 @@ mod d3d12_hello_texture {
             unsafe {
                 resources
                     .command_queue
-                    .ExecuteCommandLists(1, &mut Some(command_list))
+                    .ExecuteCommandLists(&[Some(command_list)])
             };
 
             // Present the frame.
@@ -242,12 +241,11 @@ mod d3d12_hello_texture {
         // Set necessary state.
         unsafe {
             command_list.SetGraphicsRootSignature(&resources.root_signature);
-            let mut heaps = [Some(resources.srv_heap.heap.clone())];
-            command_list.SetDescriptorHeaps(heaps.len() as u32, transmute(&mut heaps));
+            command_list.SetDescriptorHeaps(&[Some(resources.srv_heap.heap.clone())]);
             command_list
                 .SetGraphicsRootDescriptorTable(0, resources.srv_heap.get_gpu_descriptor_handle(0));
-            command_list.RSSetViewports(1, &resources.viewport);
-            command_list.RSSetScissorRects(1, &resources.scissor_rect);
+            command_list.RSSetViewports(&[resources.viewport]);
+            command_list.RSSetScissorRects(&[resources.scissor_rect]);
         }
 
         // Indicate that the back buffer will be used as a render target.
@@ -256,35 +254,27 @@ mod d3d12_hello_texture {
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
-        unsafe { command_list.ResourceBarrier(1, &barrier) };
+        unsafe { command_list.ResourceBarrier(&[barrier]) };
 
         let rtv_handle = resources
             .rtv_heap
             .get_cpu_descriptor_handle(resources.frame_index);
 
-        unsafe { command_list.OMSetRenderTargets(1, &rtv_handle, false, std::ptr::null()) };
+        unsafe { command_list.OMSetRenderTargets(1, Some(&rtv_handle), false, None) };
 
         // Record commands.
         unsafe {
-            command_list.ClearRenderTargetView(
-                rtv_handle,
-                [0.0, 0.2, 0.4, 1.0].as_ptr(),
-                0,
-                std::ptr::null(),
-            );
+            command_list.ClearRenderTargetView(rtv_handle, [0.0, 0.2, 0.4, 1.0].as_ptr(), &[]);
             command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            command_list.IASetVertexBuffers(0, 1, &resources.vbv);
+            command_list.IASetVertexBuffers(0, Some(&[resources.vbv]));
             command_list.DrawInstanced(3, 1, 0, 0);
 
             // Indicate that the back buffer will now be used to present.
-            command_list.ResourceBarrier(
-                1,
-                &transition_barrier(
-                    &resources.render_targets[resources.frame_index as usize],
-                    D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    D3D12_RESOURCE_STATE_PRESENT,
-                ),
-            );
+            command_list.ResourceBarrier(&[transition_barrier(
+                &resources.render_targets[resources.frame_index as usize],
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_PRESENT,
+            )]);
         }
 
         unsafe { command_list.Close() }
@@ -298,7 +288,7 @@ mod d3d12_hello_texture {
         if unsafe {
             device.CheckFeatureSupport(
                 D3D12_FEATURE_ROOT_SIGNATURE,
-                std::mem::transmute(&feature_data),
+                &mut feature_data as *mut D3D12_FEATURE_DATA_ROOT_SIGNATURE as _,
                 std::mem::size_of_val(&feature_data) as u32,
             )
         }
@@ -311,7 +301,7 @@ mod d3d12_hello_texture {
         // that don't support 1.1 root signatures, this one does not.
         std::assert_ne!(feature_data.HighestVersion, D3D_ROOT_SIGNATURE_VERSION_1_0);
 
-        let ranges = [D3D12_DESCRIPTOR_RANGE1 {
+        let ranges = &[D3D12_DESCRIPTOR_RANGE1 {
             RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
             NumDescriptors: 1,
             BaseShaderRegister: 0,
@@ -320,18 +310,18 @@ mod d3d12_hello_texture {
             OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
         }];
 
-        let root_parameters = [D3D12_ROOT_PARAMETER1 {
+        let root_parameters = &[D3D12_ROOT_PARAMETER1 {
             ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
             ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
             Anonymous: D3D12_ROOT_PARAMETER1_0 {
                 DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE1 {
                     NumDescriptorRanges: 1,
-                    pDescriptorRanges: unsafe { std::mem::transmute(&ranges) },
+                    pDescriptorRanges: ranges.as_ptr() as _,
                 },
             },
         }];
 
-        let sampler = D3D12_STATIC_SAMPLER_DESC {
+        let sampler = &D3D12_STATIC_SAMPLER_DESC {
             Filter: D3D12_FILTER_MIN_MAG_MIP_POINT,
             AddressU: D3D12_TEXTURE_ADDRESS_MODE_BORDER,
             AddressV: D3D12_TEXTURE_ADDRESS_MODE_BORDER,
@@ -352,23 +342,26 @@ mod d3d12_hello_texture {
             Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
                 Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
                     NumParameters: 1,
-                    pParameters: unsafe { transmute(&root_parameters) },
+                    pParameters: root_parameters.as_ptr() as _,
                     NumStaticSamplers: 1,
-                    pStaticSamplers: unsafe { transmute(&sampler) },
+                    pStaticSamplers: sampler,
                     Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
                 },
             },
         };
 
         let mut signature = None;
-
-        let signature = unsafe {
-            D3D12SerializeVersionedRootSignature(&desc, &mut signature, std::ptr::null_mut())
-        }
-        .and(Ok(signature.unwrap()))?;
+        unsafe { D3D12SerializeVersionedRootSignature(&desc, &mut signature, None) }?;
+        let signature = signature.unwrap();
 
         unsafe {
-            device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
+            device.CreateRootSignature(
+                0,
+                std::slice::from_raw_parts(
+                    signature.GetBufferPointer() as _,
+                    signature.GetBufferSize(),
+                ),
+            )
         }
     }
 
@@ -385,20 +378,20 @@ mod d3d12_hello_texture {
         let exe_path = std::env::current_exe().ok().unwrap();
         let asset_path = exe_path.parent().unwrap();
         let shaders_hlsl_path = asset_path.join("hello-texture-shaders.hlsl");
-        let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+        let shaders_hlsl: HSTRING = shaders_hlsl_path.to_str().unwrap().into();
 
         let mut vertex_shader = None;
         let vertex_shader = unsafe {
             D3DCompileFromFile(
-                shaders_hlsl,
-                std::ptr::null_mut(),
+                &shaders_hlsl,
                 None,
-                "VSMain",
-                "vs_5_0",
+                None,
+                s!("VSMain"),
+                s!("vs_5_0"),
                 compile_flags,
                 0,
                 &mut vertex_shader,
-                std::ptr::null_mut(),
+                None,
             )
         }
         .and(Ok(vertex_shader.unwrap()))?;
@@ -406,22 +399,22 @@ mod d3d12_hello_texture {
         let mut pixel_shader = None;
         let pixel_shader = unsafe {
             D3DCompileFromFile(
-                shaders_hlsl,
-                std::ptr::null_mut(),
+                &shaders_hlsl,
                 None,
-                "PSMain",
-                "ps_5_0",
+                None,
+                s!("PSMain"),
+                s!("ps_5_0"),
                 compile_flags,
                 0,
                 &mut pixel_shader,
-                std::ptr::null_mut(),
+                None,
             )
         }
         .and(Ok(pixel_shader.unwrap()))?;
 
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+                SemanticName: s!("POSITION"),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32B32_FLOAT,
                 InputSlot: 0,
@@ -430,7 +423,7 @@ mod d3d12_hello_texture {
                 InstanceDataStepRate: 0,
             },
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"TEXCOORD\0".as_ptr() as _),
+                SemanticName: s!("TEXCOORD"),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32_FLOAT,
                 InputSlot: 0,
@@ -496,7 +489,7 @@ mod d3d12_hello_texture {
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC::buffer(std::mem::size_of_val(&vertices)),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                std::ptr::null(),
+                None,
                 &mut vertex_buffer,
             )
         }
@@ -505,13 +498,9 @@ mod d3d12_hello_texture {
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut data = std::ptr::null_mut();
-            vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
-            std::ptr::copy_nonoverlapping(
-                vertices.as_ptr(),
-                data as *mut Vertex,
-                std::mem::size_of_val(&vertices),
-            );
-            vertex_buffer.Unmap(0, std::ptr::null());
+            vertex_buffer.Map(0, None, Some(&mut data))?;
+            std::ptr::copy_nonoverlapping(vertices.as_ptr(), data as *mut Vertex, vertices.len());
+            vertex_buffer.Unmap(0, None);
         }
 
         let vbv = D3D12_VERTEX_BUFFER_VIEW {
@@ -545,7 +534,7 @@ mod d3d12_hello_texture {
                 D3D12_HEAP_FLAG_NONE,
                 &texture_desc,
                 D3D12_RESOURCE_STATE_COPY_DEST,
-                std::ptr::null(),
+                None,
                 &mut texture,
             )
         }
@@ -562,10 +551,10 @@ mod d3d12_hello_texture {
                 0,
                 1,
                 0,
-                &mut placed_subresource_footprint,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &mut upload_buffer_size,
+                Some(&mut placed_subresource_footprint),
+                None,
+                None,
+                Some(&mut upload_buffer_size),
             );
         }
 
@@ -576,7 +565,7 @@ mod d3d12_hello_texture {
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC::buffer(upload_buffer_size as usize),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                std::ptr::null_mut(),
+                None,
                 &mut upload_buffer,
             )
         }
@@ -584,7 +573,7 @@ mod d3d12_hello_texture {
 
         unsafe {
             let mut upload_data = std::ptr::null_mut();
-            upload_buffer.Map(0, std::ptr::null(), &mut upload_data)?;
+            upload_buffer.Map(0, None, Some(&mut upload_data))?;
 
             generate_texture_data(
                 upload_data.cast(),
@@ -592,7 +581,7 @@ mod d3d12_hello_texture {
                 &placed_subresource_footprint.Footprint,
             );
 
-            upload_buffer.Unmap(0, std::ptr::null());
+            upload_buffer.Unmap(0, None);
         }
 
         unsafe {
@@ -615,21 +604,18 @@ mod d3d12_hello_texture {
                         PlacedFootprint: placed_subresource_footprint,
                     },
                 },
-                std::ptr::null(),
+                None,
             );
-            command_list.ResourceBarrier(
-                1,
-                &transition_barrier(
-                    &texture,
-                    D3D12_RESOURCE_STATE_COPY_DEST,
-                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                ),
-            );
+            command_list.ResourceBarrier(&[transition_barrier(
+                &texture,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            )]);
         }
 
         unsafe {
             command_list.Close()?;
-            command_queue.ExecuteCommandLists(1, &mut Some(ID3D12CommandList::from(command_list)))
+            command_queue.ExecuteCommandLists(&[Some(ID3D12CommandList::from(command_list))]);
         };
 
         // Wait for the GPU to finish any creation work before returning

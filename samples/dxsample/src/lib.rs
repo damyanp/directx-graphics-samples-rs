@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::mem::transmute;
 use windows::core::*;
 use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0};
@@ -53,16 +54,15 @@ pub fn run_sample<S>() -> Result<()>
 where
     S: DXSample,
 {
-    let instance = unsafe { GetModuleHandleA(None) };
-    debug_assert_ne!(instance, 0);
+    let instance = unsafe { GetModuleHandleA(None) }?;
 
     let wc = WNDCLASSEXA {
         cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
         style: CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(wndproc::<S>),
         hInstance: instance,
-        hCursor: unsafe { LoadCursorW(None, IDC_ARROW) },
-        lpszClassName: PSTR(b"RustWindowClass\0".as_ptr() as _),
+        hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }?,
+        lpszClassName: s!("RustWindowClass"),
         ..Default::default()
     };
 
@@ -91,8 +91,8 @@ where
     let hwnd = unsafe {
         CreateWindowExA(
             Default::default(),
-            "RustWindowClass",
-            title,
+            s!("RustWindowClass"),
+            PCSTR::from_raw(CString::new(title).unwrap().as_c_str().as_ptr().cast()),
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
@@ -101,10 +101,10 @@ where
             None, // no parent window
             None, // no menus
             instance,
-            &mut sample as *mut _ as _,
+            Some(&mut sample as *mut _ as _),
         )
     };
-    debug_assert_ne!(hwnd, 0);
+    debug_assert_ne!(hwnd, HWND::default());
 
     sample.bind_to_window(&hwnd)?;
 
@@ -131,11 +131,11 @@ where
 fn sample_wndproc<S: DXSample>(sample: &mut S, message: u32, wparam: WPARAM) -> bool {
     match message {
         WM_KEYDOWN => {
-            sample.on_key_down(wparam as u16);
+            sample.on_key_down(VIRTUAL_KEY(wparam.0 as u16));
             true
         }
         WM_KEYUP => {
-            sample.on_key_up(wparam as u16);
+            sample.on_key_up(VIRTUAL_KEY(wparam.0 as u16));
             true
         }
         WM_PAINT => {
@@ -210,9 +210,7 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         let adapter = unsafe { factory.EnumAdapters1(i) }?;
         let desc = unsafe { adapter.GetDesc1() }?;
 
-        if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE)
-            != DXGI_ADAPTER_FLAG_NONE
-        {
+        if (DXGI_ADAPTER_FLAG(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE) != DXGI_ADAPTER_FLAG_NONE {
             // Don't select the Basic Render Driver adapter. If you want a
             // software adapter, pass in "/warp" on the command line.
             continue;
@@ -222,7 +220,7 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         #[link(name = "d3d12")]
         extern "system" {
             pub fn D3D12CreateDevice(
-                padapter: RawPtr,
+                padapter: *mut ::core::ffi::c_void,
                 minimumfeaturelevel: D3D_FEATURE_LEVEL,
                 riid: *const GUID,
                 ppdevice: *mut *mut ::std::ffi::c_void,
@@ -273,7 +271,7 @@ pub fn create_device(command_line: &SampleCommandLine) -> Result<(IDXGIFactory4,
     }?;
 
     let mut device: Option<ID3D12Device> = None;
-    unsafe { D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }?;
+    unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }?;
 
     Ok((dxgi_factory, device.unwrap()))
 }
@@ -297,7 +295,7 @@ impl SynchronizedCommandQueue {
         }?;
 
         let fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
-        let fence_event = unsafe { CreateEventA(std::ptr::null_mut(), false, false, None) };
+        let fence_event = unsafe { CreateEventA(None, false, false, None) }?;
 
         Ok(SynchronizedCommandQueue {
             queue: command_queue,
@@ -311,21 +309,18 @@ impl SynchronizedCommandQueue {
     /// # Safety
     /// commandlists is expected to be an array of size numcommandlists.  Make
     /// sure it is!
-    pub unsafe fn ExecuteCommandLists(
-        &self,
-        numcommandlists: u32,
-        commandlists: *mut Option<ID3D12CommandList>,
-    ) {
-        self.queue
-            .ExecuteCommandLists(numcommandlists, commandlists)
+    pub unsafe fn ExecuteCommandLists(&self, commandlists: &[Option<ID3D12CommandList>]) {
+        self.queue.ExecuteCommandLists(commandlists)
     }
 
     pub fn execute_command_lists(&self, command_lists: &[ID3D12GraphicsCommandList]) {
         unsafe {
-            self.ExecuteCommandLists(
-                command_lists.len() as u32,
-                command_lists.as_ptr() as *mut Option<ID3D12CommandList>,
-            );
+            let commandlists: Vec<Option<ID3D12CommandList>> = command_lists
+                .iter()
+                .map(|e| Some(ID3D12CommandList::from(e.to_owned())))
+                .collect();
+
+            self.ExecuteCommandLists(commandlists.as_slice())
         }
     }
 

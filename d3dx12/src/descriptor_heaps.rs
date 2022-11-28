@@ -114,24 +114,14 @@ impl RtvDescriptorHeap {
     /// # Safety
     /// Ensure that dest_index is a valid index in the heap and that the desc is
     /// valid.
-    pub unsafe fn create_render_target_view<'a>(
+    pub unsafe fn create_render_target_view(
         &self,
         device: &ID3D12Device,
-        resource: impl IntoParam<'a, ID3D12Resource>,
-        desc: Option<&D3D12_RENDER_TARGET_VIEW_DESC>,
+        resource: &ID3D12Resource,
+        desc: Option<*const D3D12_RENDER_TARGET_VIEW_DESC>,
         dest_index: usize,
     ) {
-        let desc_ptr: *const D3D12_RENDER_TARGET_VIEW_DESC = if let Some(desc) = desc {
-            desc
-        } else {
-            std::ptr::null()
-        };
-
-        device.CreateRenderTargetView(
-            resource,
-            desc_ptr,
-            self.get_cpu_descriptor_handle(dest_index),
-        );
+        device.CreateRenderTargetView(resource, desc, self.get_cpu_descriptor_handle(dest_index));
     }
 }
 
@@ -191,24 +181,14 @@ impl DsvDescriptorHeap {
     /// # Safety
     /// Ensure that dest_index is a valid index in the heap and that the desc is
     /// valid.
-    pub unsafe fn create_depth_stencil_view<'a>(
+    pub unsafe fn create_depth_stencil_view(
         &self,
         device: &ID3D12Device,
-        resource: impl IntoParam<'a, ID3D12Resource>,
-        desc: Option<&D3D12_DEPTH_STENCIL_VIEW_DESC>,
+        resource: &ID3D12Resource,
+        desc: Option<*const D3D12_DEPTH_STENCIL_VIEW_DESC>,
         dest_index: usize,
     ) {
-        let desc_ptr: *const D3D12_DEPTH_STENCIL_VIEW_DESC = if let Some(desc) = desc {
-            desc
-        } else {
-            std::ptr::null()
-        };
-
-        device.CreateDepthStencilView(
-            resource,
-            desc_ptr,
-            self.get_cpu_descriptor_handle(dest_index),
-        );
+        device.CreateDepthStencilView(resource, desc, self.get_cpu_descriptor_handle(dest_index));
     }
 }
 
@@ -306,24 +286,16 @@ impl CbvSrvUavDescriptorHeap {
     /// # Safety
     /// Ensure that dest_index is a valid index in the heap and that the desc is
     /// valid.
-    pub unsafe fn create_shader_resource_view<'a>(
+    pub unsafe fn create_shader_resource_view<'a, RESOURCE>(
         &self,
         device: &ID3D12Device,
-        resource: impl IntoParam<'a, ID3D12Resource>,
-        desc: Option<&D3D12_SHADER_RESOURCE_VIEW_DESC>,
+        resource: RESOURCE,
+        desc: Option<*const D3D12_SHADER_RESOURCE_VIEW_DESC>,
         dest_index: usize,
-    ) {
-        let desc_ptr: *const D3D12_SHADER_RESOURCE_VIEW_DESC = if let Some(desc) = desc {
-            desc
-        } else {
-            std::ptr::null()
-        };
-
-        device.CreateShaderResourceView(
-            resource,
-            desc_ptr,
-            self.get_cpu_descriptor_handle(dest_index),
-        );
+    ) where
+        RESOURCE: std::convert::Into<::windows::core::InParam<'a, ID3D12Resource>>,
+    {
+        device.CreateShaderResourceView(resource, desc, self.get_cpu_descriptor_handle(dest_index));
     }
 
     /// Creates a CBV in this heap
@@ -337,7 +309,7 @@ impl CbvSrvUavDescriptorHeap {
         desc: &D3D12_CONSTANT_BUFFER_VIEW_DESC,
         dest_index: usize,
     ) {
-        device.CreateConstantBufferView(desc, self.get_cpu_descriptor_handle(dest_index));
+        device.CreateConstantBufferView(Some(desc), self.get_cpu_descriptor_handle(dest_index));
     }
 }
 

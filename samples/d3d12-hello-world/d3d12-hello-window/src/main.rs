@@ -65,18 +65,18 @@ mod d3d12_hello_window {
             let swap_chain: IDXGISwapChain3 = unsafe {
                 self.dxgi_factory.CreateSwapChainForHwnd(
                     &command_queue.queue,
-                    hwnd,
+                    *hwnd,
                     &swap_chain_desc,
-                    std::ptr::null(),
                     None,
-                )
-            }?
+                    None,
+                )?
+            }
             .cast()?;
 
             // This sample does not support fullscreen transitions
             unsafe {
                 self.dxgi_factory
-                    .MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)
+                    .MakeWindowAssociation(*hwnd, DXGI_MWA_NO_ALT_ENTER)
             }?;
 
             let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() }
@@ -142,7 +142,7 @@ mod d3d12_hello_window {
             unsafe {
                 resources
                     .command_queue
-                    .ExecuteCommandLists(1, &mut Some(command_list))
+                    .ExecuteCommandLists(&[Some(command_list)])
             };
 
             // Present the frame.
@@ -171,32 +171,24 @@ mod d3d12_hello_window {
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
-        unsafe { command_list.ResourceBarrier(1, &barrier) };
+        unsafe { command_list.ResourceBarrier(&[barrier]) };
 
         let rtv_handle = resources
             .rtv_heap
             .get_cpu_descriptor_handle(resources.frame_index);
 
-        unsafe { command_list.OMSetRenderTargets(1, &rtv_handle, false, std::ptr::null()) };
+        unsafe { command_list.OMSetRenderTargets(1, Some(&rtv_handle), false, None) };
 
         // Record commands.
         unsafe {
-            command_list.ClearRenderTargetView(
-                rtv_handle,
-                [0.0, 0.2, 0.4, 1.0].as_ptr(),
-                0,
-                std::ptr::null(),
-            );
+            command_list.ClearRenderTargetView(rtv_handle, [0.0, 0.2, 0.4, 1.0].as_ptr(), &[]);
 
             // Indicate that the back buffer will now be used to present.
-            command_list.ResourceBarrier(
-                1,
-                &transition_barrier(
-                    &resources.render_targets[resources.frame_index as usize],
-                    D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    D3D12_RESOURCE_STATE_PRESENT,
-                ),
-            );
+            command_list.ResourceBarrier(&[transition_barrier(
+                &resources.render_targets[resources.frame_index as usize],
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_PRESENT,
+            )]);
         }
 
         unsafe { command_list.Close() }

@@ -12,9 +12,10 @@ d3dx12 = { path = "../../d3dx12" }
 [dependencies.windows]
 version = "*"
 features = [
-    "alloc",
     "Win32_Foundation",
     "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
     "Win32_Graphics_Gdi",
     "Win32_Security",
     "Win32_System_LibraryLoader",

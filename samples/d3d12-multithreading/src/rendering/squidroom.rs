@@ -5,7 +5,7 @@ use std::{fs::File, intrinsics::transmute, os::windows::prelude::FileExt};
 use windows::{
     core::*,
     Win32::{
-        Foundation::{PSTR, RECT},
+        Foundation::RECT,
         Graphics::{
             Direct3D::{
                 Fxc::{
@@ -100,19 +100,13 @@ impl Resources {
         unsafe {
             cl.SetGraphicsRootSignature(&self.root_signature);
 
-            cl.SetDescriptorHeaps(
-                self.descriptor_heaps.len() as u32,
-                // TODO: transmute required here because ppDescriptorheaps takes
-                // a *mut, even though it really won't modify them
-                // TODO: file a bug on this
-                transmute(self.descriptor_heaps.as_ptr()),
-            );
+            cl.SetDescriptorHeaps(&self.descriptor_heaps);
 
-            cl.RSSetViewports(1, &viewport);
-            cl.RSSetScissorRects(1, &scissor_rect);
+            cl.RSSetViewports(&[viewport]);
+            cl.RSSetScissorRects(&[scissor_rect]);
             cl.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cl.IASetVertexBuffers(0, 1, &self.vertex_buffer_view);
-            cl.IASetIndexBuffer(&self.index_buffer_view);
+            cl.IASetVertexBuffers(0, Some(&[self.vertex_buffer_view]));
+            cl.IASetIndexBuffer(Some(&self.index_buffer_view));
             cl.SetGraphicsRootDescriptorTable(3, self.sampler_descriptor_table);
 
             // Render targets and depth stencil are set elsewhere because the
@@ -221,10 +215,10 @@ fn load_textures(
                 0,
                 1,
                 upload_buffer_size,
-                &mut layout,
-                &mut num_rows,
-                std::ptr::null_mut(),
-                &mut total_bytes,
+                Some(&mut layout),
+                Some(&mut num_rows),
+                None,
+                Some(&mut total_bytes),
             );
         }
         upload_buffer_size += total_bytes;
@@ -238,17 +232,18 @@ fn load_textures(
             D3D12_HEAP_FLAG_NONE,
             &D3D12_RESOURCE_DESC::buffer(upload_buffer_size as usize),
             D3D12_RESOURCE_STATE_GENERIC_READ,
-            std::ptr::null(),
+            None,
             &mut upload_buffer,
         )
     }
     .and(Ok(upload_buffer.unwrap()))?;
 
     // Populate the upload buffer with data from the file
-    let mut ptr: *mut u8 = std::ptr::null_mut();
+    let mut ptr = std::ptr::null_mut();
     unsafe {
-        upload_buffer.Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))?;
+        upload_buffer.Map(0, Some(&D3D12_RANGE { Begin: 0, End: 0 }), Some(&mut ptr))?;
     }
+    let ptr: *mut u8 = unsafe { transmute(ptr) };
 
     for (texture, _, layout, num_rows, total_bytes) in data.iter() {
         let buf = unsafe {
@@ -292,7 +287,7 @@ fn load_textures(
     }
 
     unsafe {
-        upload_buffer.Unmap(0, std::ptr::null());
+        upload_buffer.Unmap(0, None);
     }
 
     let allocator: ID3D12CommandAllocator =
@@ -310,7 +305,7 @@ fn load_textures(
                 D3D12_HEAP_FLAG_NONE,
                 desc,
                 D3D12_RESOURCE_STATE_COPY_DEST,
-                std::ptr::null(),
+                None,
                 &mut resource,
             )
         }
@@ -319,7 +314,7 @@ fn load_textures(
         unsafe {
             device.CreateShaderResourceView(
                 &resource,
-                &D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
+                Some(&D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
                     desc.Format,
                     D3D12_TEX2D_SRV {
                         MostDetailedMip: 0,
@@ -327,7 +322,7 @@ fn load_textures(
                         PlaneSlice: 0,
                         ResourceMinLODClamp: 0.0,
                     },
-                ),
+                )),
                 descriptor_heap.get_cpu_descriptor_handle(i),
             );
         }
@@ -351,7 +346,7 @@ fn load_textures(
                         PlacedFootprint: *layout,
                     },
                 },
-                std::ptr::null(),
+                None,
             );
         }
 
@@ -369,7 +364,7 @@ fn load_textures(
             }))
             .expect("made barriers");
 
-        cl.ResourceBarrier(barriers.len() as u32, barriers.as_ptr());
+        cl.ResourceBarrier(&barriers);
     }
 
     unsafe { cl.Close() }?;
@@ -392,25 +387,25 @@ fn load_geometry(
             D3D12_HEAP_FLAG_NONE,
             &D3D12_RESOURCE_DESC::buffer(buffer_size),
             D3D12_RESOURCE_STATE_GENERIC_READ,
-            std::ptr::null(),
+            None,
             &mut upload_buffer,
         )
     }
     .and(Ok(upload_buffer.unwrap()))?;
 
     // Load all the geometry data from the file
-    let mut ptr: *mut u8 = std::ptr::null_mut();
     unsafe {
-        upload_buffer.Map(0, &D3D12_RANGE { Begin: 0, End: 0 }, transmute(&mut ptr))?;
+        let mut ptr = std::ptr::null_mut();
+        upload_buffer.Map(0, Some(&D3D12_RANGE { Begin: 0, End: 0 }), Some(&mut ptr))?;
 
         std::assert_eq!(VERTEX_DATA_OFFSET + VERTEX_DATA_SIZE, INDEX_DATA_OFFSET);
         file.seek_read(
-            std::slice::from_raw_parts_mut(ptr, buffer_size),
+            std::slice::from_raw_parts_mut(ptr as _, buffer_size),
             VERTEX_DATA_OFFSET as u64,
         )
         .expect("read geometry data");
 
-        upload_buffer.Unmap(0, std::ptr::null());
+        upload_buffer.Unmap(0, None);
     }
 
     // Copy this to VRAM
@@ -421,7 +416,7 @@ fn load_geometry(
             D3D12_HEAP_FLAG_NONE,
             &D3D12_RESOURCE_DESC::buffer(buffer_size),
             D3D12_RESOURCE_STATE_COMMON,
-            std::ptr::null(),
+            None,
             &mut geometry_buffer,
         )
     }
@@ -532,12 +527,14 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     let mut error: Option<ID3DBlob> = None;
 
     unsafe {
-        D3D12SerializeVersionedRootSignature(&desc, &mut signature, &mut error)?;
+        D3D12SerializeVersionedRootSignature(&desc, &mut signature, Some(&mut error))?;
         let signature = signature.expect("root signature");
         let root_signature = device.CreateRootSignature(
             0,
-            signature.GetBufferPointer(),
-            signature.GetBufferSize(),
+            std::slice::from_raw_parts(
+                signature.GetBufferPointer() as _,
+                signature.GetBufferSize(),
+            ),
         )?;
         Ok(root_signature)
     }
@@ -547,31 +544,30 @@ fn create_pipeline_states(
     device: &ID3D12Device,
     root_signature: &ID3D12RootSignature,
 ) -> Result<(ID3D12PipelineState, ID3D12PipelineState)> {
-    let compile_flags;
-    if cfg!(debug_assertions) {
+    let compile_flags = if cfg!(debug_assertions) {
         // Enable better shader debugging with the graphics debugging tools.
-        compile_flags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
     } else {
-        compile_flags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
-    }
+        D3DCOMPILE_OPTIMIZATION_LEVEL3
+    };
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
     let shaders_hlsl_path = asset_path.join("multithreading-shaders.hlsl");
-    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+    let shaders_hlsl: HSTRING = shaders_hlsl_path.to_str().unwrap().into();
 
     let mut vertex_shader = None;
     let vertex_shader = unsafe {
         D3DCompileFromFile(
-            shaders_hlsl,
-            std::ptr::null_mut(),
+            &shaders_hlsl,
             None,
-            "VSMain",
-            "vs_5_0",
+            None,
+            s!("VSMain"),
+            s!("vs_5_0"),
             compile_flags,
             0,
             &mut vertex_shader,
-            std::ptr::null_mut(),
+            None,
         )
     }
     .and(Ok(vertex_shader.unwrap()))?;
@@ -579,15 +575,15 @@ fn create_pipeline_states(
     let mut pixel_shader = None;
     let pixel_shader = unsafe {
         D3DCompileFromFile(
-            shaders_hlsl,
-            std::ptr::null_mut(),
+            &shaders_hlsl,
             None,
-            "PSMain",
-            "ps_5_0",
+            None,
+            s!("PSMain"),
+            s!("ps_5_0"),
             compile_flags,
             0,
             &mut pixel_shader,
-            std::ptr::null_mut(),
+            None,
         )
     }
     .and(Ok(pixel_shader.unwrap()))?;
@@ -662,7 +658,7 @@ macro_rules! input_element_desc {
     { $( { $name:literal, $semantic_index:expr, $format:expr, $slot:expr, $offset:expr, $class:expr, $rate:expr } ),* }
     => { [
         $( D3D12_INPUT_ELEMENT_DESC{
-            SemanticName: PSTR(concat!($name, "\0").as_ptr() as _),
+            SemanticName: s!($name),
             SemanticIndex: $semantic_index,
             Format: $format,
             InputSlot: $slot,

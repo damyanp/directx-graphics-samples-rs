@@ -76,9 +76,9 @@ mod d3d12_hello_frame_buffering {
             let swap_chain: IDXGISwapChain3 = unsafe {
                 self.dxgi_factory.CreateSwapChainForHwnd(
                     &command_queue.queue,
-                    hwnd,
+                    *hwnd,
                     &swap_chain_desc,
-                    std::ptr::null(),
+                    None,
                     None,
                 )
             }?
@@ -87,7 +87,7 @@ mod d3d12_hello_frame_buffering {
             // This sample does not support fullscreen transitions
             unsafe {
                 self.dxgi_factory
-                    .MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER)
+                    .MakeWindowAssociation(*hwnd, DXGI_MWA_NO_ALT_ENTER)
             }?;
 
             let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() }
@@ -176,7 +176,7 @@ mod d3d12_hello_frame_buffering {
             unsafe {
                 resources
                     .command_queue
-                    .ExecuteCommandLists(1, &mut Some(command_list))
+                    .ExecuteCommandLists(&[Some(command_list)])
             };
 
             // Present the frame.
@@ -213,8 +213,8 @@ mod d3d12_hello_frame_buffering {
         // Set necessary state.
         unsafe {
             command_list.SetGraphicsRootSignature(&resources.root_signature);
-            command_list.RSSetViewports(1, &resources.viewport);
-            command_list.RSSetScissorRects(1, &resources.scissor_rect);
+            command_list.RSSetViewports(&[resources.viewport]);
+            command_list.RSSetScissorRects(&[resources.scissor_rect]);
         }
 
         // Indicate that the back buffer will be used as a render target.
@@ -223,35 +223,27 @@ mod d3d12_hello_frame_buffering {
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
-        unsafe { command_list.ResourceBarrier(1, &barrier) };
+        unsafe { command_list.ResourceBarrier(&[barrier]) };
 
         let rtv_handle = resources
             .rtv_heap
             .get_cpu_descriptor_handle(resources.frame_index);
 
-        unsafe { command_list.OMSetRenderTargets(1, &rtv_handle, false, std::ptr::null()) };
+        unsafe { command_list.OMSetRenderTargets(1, Some(&rtv_handle), false, None) };
 
         // Record commands.
         unsafe {
-            command_list.ClearRenderTargetView(
-                rtv_handle,
-                [0.0, 0.2, 0.4, 1.0].as_ptr(),
-                0,
-                std::ptr::null(),
-            );
+            command_list.ClearRenderTargetView(rtv_handle, [0.0, 0.2, 0.4, 1.0].as_ptr(), &[]);
             command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            command_list.IASetVertexBuffers(0, 1, &resources.vbv);
+            command_list.IASetVertexBuffers(0, Some(&[resources.vbv]));
             command_list.DrawInstanced(3, 1, 0, 0);
 
             // Indicate that the back buffer will now be used to present.
-            command_list.ResourceBarrier(
-                1,
-                &transition_barrier(
-                    &frame.render_target,
-                    D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    D3D12_RESOURCE_STATE_PRESENT,
-                ),
-            );
+            command_list.ResourceBarrier(&[transition_barrier(
+                &frame.render_target,
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_PRESENT,
+            )]);
         }
 
         unsafe { command_list.Close() }
@@ -265,17 +257,18 @@ mod d3d12_hello_frame_buffering {
 
         let mut signature = None;
         unsafe {
-            D3D12SerializeRootSignature(
-                &desc,
-                D3D_ROOT_SIGNATURE_VERSION_1,
-                &mut signature,
-                std::ptr::null_mut(),
-            )
+            D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &mut signature, None)
         }?;
         let signature = signature.unwrap();
 
         unsafe {
-            device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
+            device.CreateRootSignature(
+                0,
+                std::slice::from_raw_parts(
+                    signature.GetBufferPointer() as _,
+                    signature.GetBufferSize(),
+                ),
+            )
         }
     }
 
@@ -293,19 +286,20 @@ mod d3d12_hello_frame_buffering {
         let asset_path = exe_path.parent().unwrap();
         let shaders_hlsl_path = asset_path.join("hello-frame-buffering-shaders.hlsl");
         let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+        let shaders_hlsl: HSTRING = shaders_hlsl.into();
 
         let mut vertex_shader = None;
         let vertex_shader = unsafe {
             D3DCompileFromFile(
-                shaders_hlsl,
-                std::ptr::null_mut(),
+                &shaders_hlsl,
                 None,
-                "VSMain",
-                "vs_5_0",
+                None,
+                s!("VSMain"),
+                s!("vs_5_0"),
                 compile_flags,
                 0,
                 &mut vertex_shader,
-                std::ptr::null_mut(),
+                None,
             )
         }
         .and(Ok(vertex_shader.unwrap()))?;
@@ -313,22 +307,22 @@ mod d3d12_hello_frame_buffering {
         let mut pixel_shader = None;
         let pixel_shader = unsafe {
             D3DCompileFromFile(
-                shaders_hlsl,
-                std::ptr::null_mut(),
+                &shaders_hlsl,
                 None,
-                "PSMain",
-                "ps_5_0",
+                None,
+                s!("PSMain"),
+                s!("ps_5_0"),
                 compile_flags,
                 0,
                 &mut pixel_shader,
-                std::ptr::null_mut(),
+                None,
             )
         }
         .and(Ok(pixel_shader.unwrap()))?;
 
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+                SemanticName: s!("POSITION"),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32B32_FLOAT,
                 InputSlot: 0,
@@ -337,7 +331,7 @@ mod d3d12_hello_frame_buffering {
                 InstanceDataStepRate: 0,
             },
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
+                SemanticName: s!("COLOR"),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
                 InputSlot: 0,
@@ -403,7 +397,7 @@ mod d3d12_hello_frame_buffering {
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC::buffer(std::mem::size_of_val(&vertices)),
                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                std::ptr::null(),
+                None,
                 &mut vertex_buffer,
             )
         }
@@ -412,13 +406,13 @@ mod d3d12_hello_frame_buffering {
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut data = std::ptr::null_mut();
-            vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
+            vertex_buffer.Map(0, None, Some(&mut data))?;
             std::ptr::copy_nonoverlapping(
                 vertices.as_ptr(),
                 data as *mut Vertex,
-                std::mem::size_of_val(&vertices),
+                vertices.len(),
             );
-            vertex_buffer.Unmap(0, std::ptr::null());
+            vertex_buffer.Unmap(0, None);
         }
 
         let vbv = D3D12_VERTEX_BUFFER_VIEW {

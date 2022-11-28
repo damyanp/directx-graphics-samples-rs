@@ -189,7 +189,7 @@ impl Renderer {
                 D3D12_HEAP_FLAG_NONE,
                 &depth_desc,
                 D3D12_RESOURCE_STATE_DEPTH_WRITE,
-                &D3D12_CLEAR_VALUE {
+                Some(&D3D12_CLEAR_VALUE {
                     Format: DXGI_FORMAT_D32_FLOAT,
                     Anonymous: D3D12_CLEAR_VALUE_0 {
                         DepthStencil: D3D12_DEPTH_STENCIL_VALUE {
@@ -197,7 +197,7 @@ impl Renderer {
                             Stencil: 0,
                         },
                     },
-                },
+                }),
                 &mut depth_stencil,
             )
         }
@@ -205,7 +205,7 @@ impl Renderer {
 
         let depth_stencil_view = dsv_descriptor_heap.get_cpu_descriptor_handle(0);
         unsafe {
-            device.CreateDepthStencilView(&depth_stencil, std::ptr::null(), depth_stencil_view);
+            device.CreateDepthStencilView(&depth_stencil, None, depth_stencil_view);
         }
 
         // Describe and create 2 null SRVs. Null descriptors are needed in order
@@ -286,26 +286,21 @@ impl Renderer {
                     D3D12_CLEAR_FLAG_DEPTH,
                     1.0,
                     0,
-                    0,
-                    std::ptr::null(),
+                    &[],
                 );
 
                 // Indicate that the back buffer will be used as a render target.
-                cl.ResourceBarrier(
-                    1,
-                    &transition_barrier(
-                        &render_data.render_target,
-                        D3D12_RESOURCE_STATE_PRESENT,
-                        D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    ),
-                );
+                cl.ResourceBarrier(&[transition_barrier(
+                    &render_data.render_target,
+                    D3D12_RESOURCE_STATE_PRESENT,
+                    D3D12_RESOURCE_STATE_RENDER_TARGET,
+                )]);
 
                 // Clear the render target and depth stencil.
                 cl.ClearRenderTargetView(
                     render_data.render_target_view,
                     [0.0, 0.0, 0.0, 1.0].as_ptr(),
-                    0,
-                    std::ptr::null(),
+                    &[],
                 );
 
                 cl.ClearDepthStencilView(
@@ -313,8 +308,7 @@ impl Renderer {
                     D3D12_CLEAR_FLAG_DEPTH,
                     1.0,
                     0,
-                    0,
-                    std::ptr::null(),
+                    &[],
                 );
 
                 cl.Close()?
@@ -351,13 +345,12 @@ impl Renderer {
         let mid_render = spawn_async_render_task!(cl, render_data, {
             unsafe {
                 cl.ResourceBarrier(
-                    1,
                     // Transition the shadow map from writeable to readable.
-                    &transition_barrier(
+                    &[transition_barrier(
                         &render_data.shadow_texture,
                         D3D12_RESOURCE_STATE_DEPTH_WRITE,
                         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                    ),
+                    )],
                 );
 
                 cl.Close()?
@@ -387,24 +380,20 @@ impl Renderer {
 
         let post_render = spawn_async_render_task!(cl, {
             unsafe {
-                cl.ResourceBarrier(
-                    2,
-                    [
-                        // Transition the shadow map from readable to writeable
-                        transition_barrier(
-                            &render_data.shadow_texture,
-                            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                            D3D12_RESOURCE_STATE_DEPTH_WRITE,
-                        ),
-                        // Indicate that the back buffer will now be used to present
-                        transition_barrier(
-                            &render_data.render_target,
-                            D3D12_RESOURCE_STATE_RENDER_TARGET,
-                            D3D12_RESOURCE_STATE_PRESENT,
-                        ),
-                    ]
-                    .as_ptr(),
-                );
+                cl.ResourceBarrier(&[
+                    // Transition the shadow map from readable to writeable
+                    transition_barrier(
+                        &render_data.shadow_texture,
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                    ),
+                    // Indicate that the back buffer will now be used to present
+                    transition_barrier(
+                        &render_data.render_target,
+                        D3D12_RESOURCE_STATE_RENDER_TARGET,
+                        D3D12_RESOURCE_STATE_PRESENT,
+                    ),
+                ]);
                 cl.Close()?
             }
         });
@@ -449,12 +438,11 @@ fn create_swap_chain(
         ..Default::default()
     };
 
-    let swap_chain: IDXGISwapChain3 = unsafe {
-        factory.CreateSwapChainForHwnd(command_queue, hwnd, &desc, std::ptr::null(), None)
-    }?
-    .cast()?;
+    let swap_chain: IDXGISwapChain3 =
+        unsafe { factory.CreateSwapChainForHwnd(command_queue, *hwnd, &desc, None, None) }?
+            .cast()?;
 
-    unsafe { factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER) }?;
+    unsafe { factory.MakeWindowAssociation(*hwnd, DXGI_MWA_NO_ALT_ENTER) }?;
 
     Ok(swap_chain)
 }
@@ -508,7 +496,7 @@ impl Frames {
     fn end_frame(&mut self, command_queue: &mut SynchronizedCommandQueue) -> Result<()> {
         command_queue.execute_command_lists(&self.command_lists);
 
-        unsafe { self.swap_chain.Present(1, 0)? }
+        unsafe { self.swap_chain.Present(1, 0).ok()? }
 
         let frame = &mut self.frames[self.current_index];
         frame.end(command_queue)?;
@@ -594,7 +582,7 @@ impl FrameRenderData {
                 D3D12_HEAP_FLAG_NONE,
                 &shadow_texture_desc,
                 D3D12_RESOURCE_STATE_DEPTH_WRITE,
-                &D3D12_CLEAR_VALUE {
+                Some(&D3D12_CLEAR_VALUE {
                     Format: DXGI_FORMAT_D32_FLOAT,
                     Anonymous: D3D12_CLEAR_VALUE_0 {
                         DepthStencil: D3D12_DEPTH_STENCIL_VALUE {
@@ -602,7 +590,7 @@ impl FrameRenderData {
                             Stencil: 0,
                         },
                     },
-                },
+                }),
                 &mut shadow_texture,
             )
         }
@@ -617,7 +605,7 @@ impl FrameRenderData {
                 D3D12_HEAP_FLAG_NONE,
                 &cb_desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                std::ptr::null(),
+                None,
                 &mut shadow_cb,
             )
         }
@@ -630,60 +618,66 @@ impl FrameRenderData {
                 D3D12_HEAP_FLAG_NONE,
                 &cb_desc,
                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                std::ptr::null(),
+                None,
                 &mut scene_cb,
             )
         }
         .and(Ok(scene_cb.unwrap()))?;
 
-        let mut shadow_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
-        let mut scene_cb_ptr: *mut SceneConstantBuffer = std::ptr::null_mut();
+        let mut shadow_cb_ptr = std::ptr::null_mut();
+        let mut scene_cb_ptr = std::ptr::null_mut();
 
         unsafe {
-            shadow_cb.Map(0, &D3D12_RANGE::default(), transmute(&mut shadow_cb_ptr))?;
-            scene_cb.Map(0, &D3D12_RANGE::default(), transmute(&mut scene_cb_ptr))?;
+            shadow_cb.Map(0, None, Some(&mut shadow_cb_ptr))?;
+            scene_cb.Map(0, None, Some(&mut scene_cb_ptr))?;
         }
+
+        let shadow_cb_ptr = unsafe { transmute(shadow_cb_ptr) };
+        let scene_cb_ptr = unsafe { transmute(scene_cb_ptr) };
 
         let shadow_srv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(0);
         let shadow_cbv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(1);
         let scene_cbv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(2);
 
         unsafe {
-            device.CreateRenderTargetView(&render_target, std::ptr::null(), render_target_view);
+            device.CreateRenderTargetView(&render_target, None, render_target_view);
 
             // Note: original sample explicitly creates a DSV_DESC, but it looks
             // like null should work.
             device.CreateDepthStencilView(
                 &shadow_texture,
-                &D3D12_DEPTH_STENCIL_VIEW_DESC::tex2d(DXGI_FORMAT_D32_FLOAT, 0),
+                Some(&D3D12_DEPTH_STENCIL_VIEW_DESC::tex2d(
+                    DXGI_FORMAT_D32_FLOAT,
+                    0,
+                )),
                 shadow_depth_view,
             );
 
             device.CreateShaderResourceView(
                 &shadow_texture,
-                &D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
+                Some(&D3D12_SHADER_RESOURCE_VIEW_DESC::texture2d(
                     DXGI_FORMAT_R32_FLOAT,
                     D3D12_TEX2D_SRV {
                         MipLevels: 1,
                         ..Default::default()
                     },
-                ),
+                )),
                 shadow_srv_descriptor_handles.cpu,
             );
 
             device.CreateConstantBufferView(
-                &D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
                     BufferLocation: shadow_cb.GetGPUVirtualAddress(),
                     SizeInBytes: cb_size as u32,
-                },
+                }),
                 shadow_cbv_descriptor_handles.cpu,
             );
 
             device.CreateConstantBufferView(
-                &D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
                     BufferLocation: scene_cb.GetGPUVirtualAddress(),
                     SizeInBytes: cb_size as u32,
-                },
+                }),
                 scene_cbv_descriptor_handles.cpu,
             );
         }
@@ -754,7 +748,7 @@ impl FrameRenderData {
             cl.SetGraphicsRootDescriptorTable(2, self.resources.null_srv_table);
             cl.SetGraphicsRootDescriptorTable(1, self.shadow_cbv_table);
 
-            cl.OMSetRenderTargets(0, std::ptr::null_mut(), false, &self.shadow_depth_view);
+            cl.OMSetRenderTargets(0, None, false, Some(&self.shadow_depth_view));
         }
     }
 
@@ -765,9 +759,9 @@ impl FrameRenderData {
 
             cl.OMSetRenderTargets(
                 1,
-                &self.render_target_view,
+                Some(&self.render_target_view),
                 false,
-                &self.resources.depth_stencil_view,
+                Some(&self.resources.depth_stencil_view),
             );
         }
     }
