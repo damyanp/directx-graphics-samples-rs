@@ -13,7 +13,7 @@ extern crate static_assertions as sa;
 
 mod d3d12_hello_constbuffers {
 
-    use std::{intrinsics::transmute};
+    use std::intrinsics::transmute;
 
     use super::*;
 
@@ -540,11 +540,7 @@ mod d3d12_hello_constbuffers {
         unsafe {
             let mut data = std::ptr::null_mut();
             vertex_buffer.Map(0, None, Some(&mut data))?;
-            std::ptr::copy_nonoverlapping(
-                vertices.as_ptr(),
-                data as *mut Vertex,
-                vertices.len(),
-            );
+            std::ptr::copy_nonoverlapping(vertices.as_ptr(), data as *mut Vertex, vertices.len());
             vertex_buffer.Unmap(0, None);
         }
 

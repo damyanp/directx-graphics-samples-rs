@@ -19,13 +19,16 @@ pub struct Timer {
 impl Default for Timer {
     fn default() -> Self {
         let now = Instant::now();
-        Timer { last_time: now, now }
+        Timer {
+            last_time: now,
+            now,
+        }
     }
 }
 
 impl Timer {
     pub fn tick(&mut self) {
-        self.last_time = self.now;        
+        self.last_time = self.now;
         self.now = Instant::now();
     }
 
