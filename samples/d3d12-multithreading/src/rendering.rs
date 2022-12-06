@@ -4,7 +4,7 @@ use cgmath::{point3, vec3, vec4, Deg, Matrix4, Point3, SquareMatrix, Vector3, Ve
 use d3dx12::*;
 use dxsample::*;
 use static_assertions::const_assert_eq;
-use std::{intrinsics::transmute, sync::Arc};
+use std::sync::Arc;
 use windows::{
     core::*,
     Win32::{
@@ -632,8 +632,8 @@ impl FrameRenderData {
             scene_cb.Map(0, None, Some(&mut scene_cb_ptr))?;
         }
 
-        let shadow_cb_ptr = unsafe { transmute(shadow_cb_ptr) };
-        let scene_cb_ptr = unsafe { transmute(scene_cb_ptr) };
+        let shadow_cb_ptr = shadow_cb_ptr.cast();
+        let scene_cb_ptr = scene_cb_ptr.cast();
 
         let shadow_srv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(0);
         let shadow_cbv_descriptor_handles = gpu_descriptor_heap.get_descriptor_handles(1);

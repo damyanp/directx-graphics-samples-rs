@@ -1,7 +1,7 @@
 use array_init::{array_init, try_array_init};
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
-use std::{fs::File, intrinsics::transmute, os::windows::prelude::FileExt};
+use std::{fs::File, os::windows::prelude::FileExt};
 use windows::{
     core::*,
     Win32::{
@@ -243,7 +243,7 @@ fn load_textures(
     unsafe {
         upload_buffer.Map(0, Some(&D3D12_RANGE { Begin: 0, End: 0 }), Some(&mut ptr))?;
     }
-    let ptr: *mut u8 = unsafe { transmute(ptr) };
+    let ptr: *mut u8 = ptr.cast();
 
     for (texture, _, layout, num_rows, total_bytes) in data.iter() {
         let buf = unsafe {
@@ -515,7 +515,7 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
         Anonymous: D3D12_VERSIONED_ROOT_SIGNATURE_DESC_0 {
             Desc_1_1: D3D12_ROOT_SIGNATURE_DESC1 {
                 NumParameters: root_parameters.len() as u32,
-                pParameters: unsafe { transmute(root_parameters) },
+                pParameters: root_parameters.as_ptr() as _,
                 NumStaticSamplers: 0,
                 pStaticSamplers: std::ptr::null_mut(),
                 Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,

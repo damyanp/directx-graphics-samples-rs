@@ -1,5 +1,4 @@
 use std::ffi::CString;
-use std::mem::transmute;
 use windows::core::*;
 use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
@@ -180,7 +179,7 @@ extern "system" fn wndproc<S: DXSample>(
     match message {
         WM_CREATE => {
             unsafe {
-                let create_struct: &CREATESTRUCTA = transmute(lparam);
+                let create_struct = (lparam.0 as *const CREATESTRUCTA).as_ref().unwrap();
                 SetWindowLong(window, GWLP_USERDATA, create_struct.lpCreateParams as _);
             }
             LRESULT::default()
@@ -231,7 +230,7 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         // create the actual device yet.
         if unsafe {
             D3D12CreateDevice(
-                std::mem::transmute_copy(&adapter),
+                adapter.as_raw(),
                 D3D_FEATURE_LEVEL_11_0,
                 &ID3D12Device::IID,
                 std::ptr::null_mut(),
