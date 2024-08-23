@@ -2,6 +2,7 @@ use array_init::{array_init, try_array_init};
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
 use std::{fs::File, os::windows::prelude::FileExt};
+use std::env;
 use windows::{
     core::*,
     Win32::{
@@ -52,7 +53,11 @@ impl Resources {
         let sampler_descriptor_heap = create_samplers(device)?;
         let sampler_descriptor_table = sampler_descriptor_heap.start_gpu_handle();
 
-        let file = File::open(DATA_FILE_NAME).expect("open data file");
+        let mut file_path = env::current_exe().expect("failed to get current executable path");
+        file_path.pop(); // Remove the executable name from the path
+        file_path.push(DATA_FILE_NAME);
+
+        let file = File::open(file_path).expect("failed to open data file");
 
         let textures = load_textures(device, command_queue, &gpu_descriptor_heap, &file)?;
         let geometry_buffer = load_geometry(device, command_queue, &file)?;
