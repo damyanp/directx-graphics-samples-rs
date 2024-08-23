@@ -138,15 +138,13 @@ mod d3d12_hello_window {
             populate_command_list(resources).unwrap();
 
             // Execute the command list.
-            let command_list = ID3D12CommandList::from(&resources.command_list);
-            unsafe {
-                resources
-                    .command_queue
-                    .ExecuteCommandLists(&[Some(command_list)])
-            };
+            let command_list = Some(resources.command_list.cast().unwrap());
+            unsafe { resources.command_queue.ExecuteCommandLists(&[command_list]) };
 
             // Present the frame.
-            unsafe { resources.swap_chain.Present(1, 0) }.ok().unwrap();
+            unsafe { resources.swap_chain.Present(1, DXGI_PRESENT(0)) }
+                .ok()
+                .unwrap();
 
             wait_for_previous_frame(resources);
         }
@@ -167,7 +165,7 @@ mod d3d12_hello_window {
 
         // Indicate that the back buffer will be used as a render target.
         let barrier = transition_barrier(
-            &resources.render_targets[resources.frame_index as usize],
+            &resources.render_targets[resources.frame_index],
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
@@ -181,11 +179,11 @@ mod d3d12_hello_window {
 
         // Record commands.
         unsafe {
-            command_list.ClearRenderTargetView(rtv_handle, [0.0, 0.2, 0.4, 1.0].as_ptr(), &[]);
+            command_list.ClearRenderTargetView(rtv_handle, &[0.0, 0.2, 0.4, 1.0], None);
 
             // Indicate that the back buffer will now be used to present.
             command_list.ResourceBarrier(&[transition_barrier(
-                &resources.render_targets[resources.frame_index as usize],
+                &resources.render_targets[resources.frame_index],
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_PRESENT,
             )]);

@@ -23,7 +23,7 @@ impl RasterizerDesc for D3D12_RASTERIZER_DESC {
             FillMode: D3D12_FILL_MODE_SOLID,
             CullMode: D3D12_CULL_MODE_BACK,
             FrontCounterClockwise: false.into(),
-            DepthBias: D3D12_DEFAULT_DEPTH_BIAS as i32,
+            DepthBias: D3D12_DEFAULT_DEPTH_BIAS,
             DepthBiasClamp: D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
             SlopeScaledDepthBias: D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
             DepthClipEnable: true.into(),

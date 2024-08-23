@@ -299,8 +299,8 @@ impl Renderer {
                 // Clear the render target and depth stencil.
                 cl.ClearRenderTargetView(
                     render_data.render_target_view,
-                    [0.0, 0.0, 0.0, 1.0].as_ptr(),
-                    &[],
+                    &[0.0, 0.0, 0.0, 1.0],
+                    None,
                 );
 
                 cl.ClearDepthStencilView(
@@ -496,7 +496,7 @@ impl Frames {
     fn end_frame(&mut self, command_queue: &mut SynchronizedCommandQueue) -> Result<()> {
         command_queue.execute_command_lists(&self.command_lists);
 
-        unsafe { self.swap_chain.Present(1, 0).ok()? }
+        unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)).ok()? }
 
         let frame = &mut self.frames[self.current_index];
         frame.end(command_queue)?;

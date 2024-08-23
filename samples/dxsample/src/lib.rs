@@ -7,7 +7,6 @@ use windows::Win32::{
     Graphics::{Direct3D12::*, Dxgi::*},
     System::LibraryLoader::*,
     System::Threading::*,
-    System::WindowsProgramming::*,
     UI::WindowsAndMessaging::*,
 };
 
@@ -59,7 +58,7 @@ where
         cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
         style: CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(wndproc::<S>),
-        hInstance: instance,
+        hInstance: instance.into(),
         hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }?,
         lpszClassName: s!("RustWindowClass"),
         ..Default::default()
@@ -79,7 +78,7 @@ where
         right: size.0,
         bottom: size.1,
     };
-    unsafe { AdjustWindowRect(&mut window_rect, WS_OVERLAPPEDWINDOW, false) };
+    unsafe { AdjustWindowRect(&mut window_rect, WS_OVERLAPPEDWINDOW, false) }?;
 
     let mut title = sample.title();
 
@@ -102,19 +101,19 @@ where
             instance,
             Some(&mut sample as *mut _ as _),
         )
-    };
+    }?;
     debug_assert_ne!(hwnd, HWND::default());
 
     sample.bind_to_window(&hwnd)?;
 
-    unsafe { ShowWindow(hwnd, SW_SHOW) };
+    let _ = unsafe { ShowWindow(hwnd, SW_SHOW) };
 
     loop {
         let mut message = MSG::default();
 
         if unsafe { PeekMessageA(&mut message, None, 0, 0, PM_REMOVE) }.into() {
             unsafe {
-                TranslateMessage(&message);
+                let _ = TranslateMessage(&message);
                 DispatchMessageA(&message);
             }
 
@@ -209,7 +208,9 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         let adapter = unsafe { factory.EnumAdapters1(i) }?;
         let desc = unsafe { adapter.GetDesc1() }?;
 
-        if (DXGI_ADAPTER_FLAG(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE) != DXGI_ADAPTER_FLAG_NONE {
+        if (DXGI_ADAPTER_FLAG(desc.Flags as _) & DXGI_ADAPTER_FLAG_SOFTWARE)
+            != DXGI_ADAPTER_FLAG_NONE
+        {
             // Don't select the Basic Render Driver adapter. If you want a
             // software adapter, pass in "/warp" on the command line.
             continue;
@@ -258,7 +259,7 @@ pub fn create_device(command_line: &SampleCommandLine) -> Result<(IDXGIFactory4,
     let dxgi_factory_flags = if cfg!(debug_assertions) {
         DXGI_CREATE_FACTORY_DEBUG
     } else {
-        0
+        DXGI_CREATE_FACTORY_FLAGS(0)
     };
 
     let dxgi_factory: IDXGIFactory4 = unsafe { CreateDXGIFactory2(dxgi_factory_flags) }?;

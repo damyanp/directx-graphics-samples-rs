@@ -286,14 +286,14 @@ impl CbvSrvUavDescriptorHeap {
     /// # Safety
     /// Ensure that dest_index is a valid index in the heap and that the desc is
     /// valid.
-    pub unsafe fn create_shader_resource_view<'a, RESOURCE>(
+    pub unsafe fn create_shader_resource_view<RESOURCE>(
         &self,
         device: &ID3D12Device,
         resource: RESOURCE,
         desc: Option<*const D3D12_SHADER_RESOURCE_VIEW_DESC>,
         dest_index: usize,
     ) where
-        RESOURCE: std::convert::Into<::windows::core::InParam<'a, ID3D12Resource>>,
+        RESOURCE: windows::core::Param<ID3D12Resource>,
     {
         device.CreateShaderResourceView(resource, desc, self.get_cpu_descriptor_handle(dest_index));
     }

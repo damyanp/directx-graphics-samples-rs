@@ -18,7 +18,7 @@ pub fn transition_barrier(
         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
         Anonymous: D3D12_RESOURCE_BARRIER_0 {
             Transition: std::mem::ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                pResource: Some(unsafe { std::mem::transmute_copy(resource) }),
+                pResource: unsafe { std::mem::transmute_copy(resource) },
                 StateBefore: state_before,
                 StateAfter: state_after,
                 Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,

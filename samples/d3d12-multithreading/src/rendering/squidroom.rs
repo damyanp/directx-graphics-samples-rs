@@ -24,7 +24,7 @@ const DATA_FILE_NAME: &str = "SquidRoom.bin";
 
 pub struct Resources {
     _textures: [ID3D12Resource; TEXTURE_COUNT],
-    pub depth_stencil: ID3D12Resource,
+    pub _depth_stencil: ID3D12Resource,
     pub depth_stencil_view: D3D12_CPU_DESCRIPTOR_HANDLE,
     _geometry_buffer: ID3D12Resource,
     vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW,
@@ -68,7 +68,7 @@ impl Resources {
 
         Ok(Resources {
             _textures: textures,
-            depth_stencil,
+            _depth_stencil: depth_stencil,
             depth_stencil_view,
             _geometry_buffer: geometry_buffer,
             vertex_buffer_view: D3D12_VERTEX_BUFFER_VIEW {
@@ -330,7 +330,7 @@ fn load_textures(
         unsafe {
             cl.CopyTextureRegion(
                 &D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(resource.clone()),
+                    pResource: std::mem::transmute_copy(&resource),
                     Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         SubresourceIndex: 0,
@@ -340,7 +340,7 @@ fn load_textures(
                 0,
                 0,
                 &D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(upload_buffer.clone()),
+                    pResource: std::mem::transmute_copy(&upload_buffer),
                     Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         PlacedFootprint: *layout,
@@ -438,6 +438,7 @@ fn load_geometry(
 }
 
 #[repr(C)] // This has the same repr as D3D12_ROOT_PARAMETER1
+#[allow(non_camel_case_types)]
 struct D3D12_ROOT_PARAMETER1_WRAPPER<'a> {
     value: D3D12_ROOT_PARAMETER1, // <-- this does not have a lifetime, but we have safely hidden it
     lifetime: core::marker::PhantomData<&'a [D3D12_DESCRIPTOR_RANGE1]>, // <-- this pretends to hold the lifetime
@@ -604,11 +605,11 @@ fn create_pipeline_states(
     };
 
     let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-        pRootSignature: Some(root_signature.clone()),
+        pRootSignature: unsafe { std::mem::transmute_copy(root_signature) },
         VS: D3D12_SHADER_BYTECODE::from_blob(&vertex_shader),
         PS: D3D12_SHADER_BYTECODE::from_blob(&pixel_shader),
         BlendState: D3D12_BLEND_DESC::reasonable_default(),
-        SampleMask: u32::max_value(),
+        SampleMask: u32::MAX,
         RasterizerState: D3D12_RASTERIZER_DESC::reasonable_default(),
         DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
             DepthEnable: true.into(),

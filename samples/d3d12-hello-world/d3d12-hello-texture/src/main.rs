@@ -211,15 +211,13 @@ mod d3d12_hello_texture {
             populate_command_list(resources).unwrap();
 
             // Execute the command list.
-            let command_list = ID3D12CommandList::from(&resources.command_list);
-            unsafe {
-                resources
-                    .command_queue
-                    .ExecuteCommandLists(&[Some(command_list)])
-            };
+            let command_list = Some(resources.command_list.cast().unwrap());
+            unsafe { resources.command_queue.ExecuteCommandLists(&[command_list]) };
 
             // Present the frame.
-            unsafe { resources.swap_chain.Present(1, 0) }.ok().unwrap();
+            unsafe { resources.swap_chain.Present(1, DXGI_PRESENT(0)) }
+                .ok()
+                .unwrap();
 
             wait_for_previous_frame(resources);
         }
@@ -250,7 +248,7 @@ mod d3d12_hello_texture {
 
         // Indicate that the back buffer will be used as a render target.
         let barrier = transition_barrier(
-            &resources.render_targets[resources.frame_index as usize],
+            &resources.render_targets[resources.frame_index],
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
@@ -264,14 +262,14 @@ mod d3d12_hello_texture {
 
         // Record commands.
         unsafe {
-            command_list.ClearRenderTargetView(rtv_handle, [0.0, 0.2, 0.4, 1.0].as_ptr(), &[]);
+            command_list.ClearRenderTargetView(rtv_handle, &[0.0, 0.2, 0.4, 1.0], None);
             command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             command_list.IASetVertexBuffers(0, Some(&[resources.vbv]));
             command_list.DrawInstanced(3, 1, 0, 0);
 
             // Indicate that the back buffer will now be used to present.
             command_list.ResourceBarrier(&[transition_barrier(
-                &resources.render_targets[resources.frame_index as usize],
+                &resources.render_targets[resources.frame_index],
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_PRESENT,
             )]);
@@ -438,13 +436,13 @@ mod d3d12_hello_texture {
                 pInputElementDescs: input_element_descs.as_mut_ptr(),
                 NumElements: input_element_descs.len() as u32,
             },
-            pRootSignature: Some(root_signature.clone()), // << https://github.com/microsoft/windows-rs/discussions/623
+            pRootSignature: unsafe { std::mem::transmute_copy(root_signature) },
             VS: D3D12_SHADER_BYTECODE::from_blob(&vertex_shader),
             PS: D3D12_SHADER_BYTECODE::from_blob(&pixel_shader),
             RasterizerState: D3D12_RASTERIZER_DESC::reasonable_default(),
             BlendState: D3D12_BLEND_DESC::reasonable_default(),
             DepthStencilState: D3D12_DEPTH_STENCIL_DESC::default(),
-            SampleMask: u32::max_value(),
+            SampleMask: u32::MAX,
             PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
             NumRenderTargets: 1,
             SampleDesc: DXGI_SAMPLE_DESC {
@@ -588,7 +586,7 @@ mod d3d12_hello_texture {
             command_list.Reset(command_allocator, None)?;
             command_list.CopyTextureRegion(
                 &D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(texture.clone()),
+                    pResource: std::mem::transmute_copy(&texture),
                     Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         SubresourceIndex: 0,
@@ -598,7 +596,7 @@ mod d3d12_hello_texture {
                 0,
                 0,
                 &D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(upload_buffer.clone()),
+                    pResource: std::mem::transmute_copy(&upload_buffer),
                     Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         PlacedFootprint: placed_subresource_footprint,
@@ -615,7 +613,7 @@ mod d3d12_hello_texture {
 
         unsafe {
             command_list.Close()?;
-            command_queue.ExecuteCommandLists(&[Some(ID3D12CommandList::from(command_list))]);
+            command_queue.ExecuteCommandLists(&[Some(command_list.cast().unwrap())]);
         };
 
         // Wait for the GPU to finish any creation work before returning
