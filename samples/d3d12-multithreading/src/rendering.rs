@@ -286,7 +286,7 @@ impl Renderer {
                     D3D12_CLEAR_FLAG_DEPTH,
                     1.0,
                     0,
-                    &[],
+                    None,
                 );
 
                 // Indicate that the back buffer will be used as a render target.
@@ -308,7 +308,7 @@ impl Renderer {
                     D3D12_CLEAR_FLAG_DEPTH,
                     1.0,
                     0,
-                    &[],
+                    None,
                 );
 
                 cl.Close()?

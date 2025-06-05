@@ -1,8 +1,8 @@
 use array_init::{array_init, try_array_init};
 use d3dx12::*;
 use dxsample::SynchronizedCommandQueue;
-use std::{fs::File, os::windows::prelude::FileExt};
 use std::env;
+use std::{fs::File, os::windows::prelude::FileExt};
 use windows::{
     core::*,
     Win32::{
@@ -837,7 +837,7 @@ const TEXTURES: [TextureResource; 74] = textures_array! {
     {  1024,  1024,   1,       DXGI_FORMAT_BC1_UNORM, { { 29753352, 524288, 2048 }, } },// Golfclub_nm_1024.dds
 };
 
-const DRAWS: [DrawParameters; 1025] = draws_array! {
+static DRAWS: [DrawParameters; 1025] = draws_array! {
     {   0,   1,  -1,        0,    15198,        0 }, // subset0_squard_room_platform_3_dif1
     {   2,   3,  -1,    15198,      438,     6051 }, // subset0_squard_room_platform_2_dif
     {   2,   3,  -1,    15636,      300,     6164 }, // subset0_squard_room_platform_2_dif
