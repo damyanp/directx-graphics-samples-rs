@@ -7,11 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-d3dx12 = { path = "../../d3dx12" }
-
-[dependencies.windows]
-version = "*"
-features = [
+windows = { version = "*", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D_Fxc",
     "Win32_Graphics_Direct3D12",
@@ -25,4 +21,5 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Input",
     "Win32_UI_WindowsAndMessaging",
-]
+] }
+d3dx12 = { path = "../../d3dx12" }
